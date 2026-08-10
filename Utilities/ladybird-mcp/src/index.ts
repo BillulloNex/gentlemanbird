@@ -12,7 +12,7 @@ const client = new LadybirdWebDriverClient(webDriverUrl);
 const server = new Server(
   {
     name: 'ladybird-mcp',
-    version: '0.2.0',
+    version: '0.3.0',
   },
   {
     capabilities: {
@@ -24,6 +24,24 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+      {
+        name: 'launch_browser',
+        description:
+          'Launches or connects to the Ladybird browser. Default is VISIBLE window (headless: false). Pass headless: true for CI/background mode.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            headless: {
+              type: 'boolean',
+              description: 'Whether to run browser headlessly without GUI window (default: false - visible)',
+            },
+            url: {
+              type: 'string',
+              description: 'Initial URL to navigate to upon launch (default: about:blank)',
+            },
+          },
+        },
+      },
       {
         name: 'get_agent_tree',
         description:
@@ -77,7 +95,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'navigate',
-        description: 'Navigates the browser tab to a specified URL, or moves back/forward in history.',
+        description:
+          'Navigates the browser tab to a specified URL, or moves back/forward in history. Default launches visible browser unless headless: true.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -89,6 +108,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               enum: ['back', 'forward'],
               description: 'Move back or forward in history instead of navigating to URL',
+            },
+            headless: {
+              type: 'boolean',
+              description: 'Whether to run headless mode (default: false - visible)',
             },
           },
         },
@@ -124,7 +147,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'observe',
-        description: 'Observes the page state for navigation completion, network idle, or DOM stability.',
+        description: 'Observes the page state until document.readyState === "complete" or network stability.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -157,6 +180,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
+    if (name === 'launch_browser') {
+      const headless = (args?.headless as boolean) ?? false;
+      const url = (args?.url as string) || 'about:blank';
+      await client.ensureSession(headless);
+      if (url !== 'about:blank') {
+        await client.navigate(url, headless);
+      }
+      const currentUrl = await client.getCurrentUrl();
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Successfully launched Ladybird browser (headless=${headless}). Current URL: ${currentUrl}`,
+          },
+        ],
+      };
+    }
+
     if (name === 'delete_session') {
       await client.closeSession();
       return {
@@ -171,13 +212,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === 'navigate') {
       const history = args?.history as string | undefined;
+      const headless = (args?.headless as boolean) ?? false;
+
       if (history === 'back') {
         await client.goBack();
       } else if (history === 'forward') {
         await client.goForward();
       } else {
         const url = (args?.url as string) || 'about:blank';
-        await client.navigate(url);
+        await client.navigate(url, headless);
       }
 
       const currentUrl = await client.getCurrentUrl();
@@ -307,14 +350,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === 'observe') {
       const event = args?.event as string;
-      const timeoutMs = (args?.timeoutMs as number) || 3000;
-      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 10000)));
+      const timeoutMs = (args?.timeoutMs as number) || 5000;
+      const isLoaded = await client.waitForLoad(timeoutMs);
       const currentUrl = await client.getCurrentUrl();
       return {
         content: [
           {
             type: 'text',
-            text: `Observed event "${event}". Current URL is ${currentUrl}`,
+            text: `Observed event "${event}" (document.readyState complete=${isLoaded}). Current URL is ${currentUrl}`,
           },
         ],
       };
@@ -337,7 +380,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Ladybird MCP Server 0.2.0 running on stdio');
+  console.error('Ladybird MCP Server 0.3.0 running on stdio');
 }
 
 main().catch((err) => {

@@ -48,12 +48,19 @@ export const INJECTED_AX_WALKER_SCRIPT = `return (function() {
   }
 
   function getName(elem) {
-    let name = elem.getAttribute('aria-label') || elem.getAttribute('placeholder') || elem.getAttribute('title') || '';
+    let name = elem.getAttribute('aria-label') || elem.getAttribute('alt') || elem.getAttribute('placeholder') || elem.getAttribute('title') || '';
     if (!name && elem.labels && elem.labels.length > 0) {
       name = elem.labels[0].innerText;
     }
     if (!name) {
+      const img = elem.querySelector('img');
+      if (img) name = img.getAttribute('alt') || img.getAttribute('title') || '';
+    }
+    if (!name) {
       name = elem.innerText || elem.textContent || '';
+    }
+    if (!name && elem.hasAttribute('href')) {
+      name = elem.getAttribute('href') || '';
     }
     return name.trim().replace(/\\s+/g, ' ').slice(0, 80);
   }

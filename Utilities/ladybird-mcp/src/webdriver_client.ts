@@ -16,6 +16,8 @@ export interface AXNode {
   children?: AXNode[];
 }
 
+const SESSION_FILE_PATH = '/tmp/ladybird-session.json';
+
 export class LadybirdWebDriverClient {
   private baseUrl: string;
   private currentSessionId: string | null = null;
@@ -26,14 +28,35 @@ export class LadybirdWebDriverClient {
     this.registerExitHooks();
   }
 
+  private saveSessionId(id: string | null) {
+    this.currentSessionId = id;
+    try {
+      if (id) {
+        fs.writeFileSync(SESSION_FILE_PATH, JSON.stringify({ sessionId: id, timestamp: Date.now() }));
+      } else {
+        if (fs.existsSync(SESSION_FILE_PATH)) fs.unlinkSync(SESSION_FILE_PATH);
+      }
+    } catch (_) {}
+  }
+
+  private loadSessionId(): string | null {
+    try {
+      if (fs.existsSync(SESSION_FILE_PATH)) {
+        const data = JSON.parse(fs.readFileSync(SESSION_FILE_PATH, 'utf8'));
+        return data.sessionId || null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   private registerExitHooks() {
     const cleanup = () => {
       if (this.currentSessionId) {
-        // Synchronously or fire-and-forget delete session on exit
         try {
           const url = new URL(`/session/${this.currentSessionId}`, this.baseUrl);
           const req = http.request(url, { method: 'DELETE' });
           req.end();
+          if (fs.existsSync(SESSION_FILE_PATH)) fs.unlinkSync(SESSION_FILE_PATH);
         } catch (_) {}
       }
     };
@@ -96,7 +119,7 @@ export class LadybirdWebDriverClient {
     }
   }
 
-  private async autoSpawnWebDriver(): Promise<void> {
+  public async autoSpawnWebDriver(headless: boolean = false): Promise<void> {
     const possiblePaths = [
       path.resolve(__dirname, '../../../Build/release/bin/Ladybird.app/Contents/MacOS/WebDriver'),
       path.resolve(__dirname, '../../../../Build/release/bin/Ladybird.app/Contents/MacOS/WebDriver'),
@@ -111,28 +134,41 @@ export class LadybirdWebDriverClient {
     }
 
     const port = new URL(this.baseUrl).port || '8000';
-    console.error(`Auto-spawning Ladybird WebDriver at ${binaryPath} on port ${port}...`);
+    const spawnArgs = ['-p', port];
+    if (headless) {
+      spawnArgs.push('--headless');
+    }
+
+    console.error(`Auto-spawning Ladybird WebDriver (headless=${headless}) at ${binaryPath} on port ${port}...`);
     
-    this.spawnedProcess = spawn(binaryPath, ['-p', port, '--headless'], {
+    this.spawnedProcess = spawn(binaryPath, spawnArgs, {
       detached: true,
       stdio: 'ignore',
     });
     this.spawnedProcess.unref();
 
-    // Wait up to 5s for WebDriver server readiness
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 250));
       if (await this.isServiceRunning()) return;
     }
   }
 
-  async ensureSession(): Promise<string> {
+  async ensureSession(headless: boolean = false): Promise<string> {
     if (this.currentSessionId) {
       return this.currentSessionId;
     }
 
     if (!(await this.isServiceRunning())) {
-      await this.autoSpawnWebDriver();
+      await this.autoSpawnWebDriver(headless);
+    }
+
+    // Try cleaning up any orphaned session from previous process
+    const storedSessionId = this.loadSessionId();
+    if (storedSessionId) {
+      try {
+        await this.request('DELETE', `/session/${storedSessionId}`);
+      } catch (_) {}
+      this.saveSessionId(null);
     }
 
     try {
@@ -141,31 +177,43 @@ export class LadybirdWebDriverClient {
           alwaysMatch: {},
         },
       });
+      let id: string | null = null;
       if (res && res.value && res.value.sessionId) {
-        this.currentSessionId = res.value.sessionId;
+        id = res.value.sessionId;
       } else if (res && res.sessionId) {
-        this.currentSessionId = res.sessionId;
-      } else {
+        id = res.sessionId;
+      }
+      if (!id) {
         throw new Error(`Unexpected session creation response: ${JSON.stringify(res)}`);
       }
+      this.saveSessionId(id);
       return this.currentSessionId!;
     } catch (err: any) {
-      // Self-healing for single-session bottleneck: if session already exists, attempt recovery
       if (err.message && err.message.includes('session not created')) {
-        console.error('Stale session detected in WebDriver. Attempting self-healing cleanup...');
-        try {
-          // Attempt DELETE on dummy or cached path if active
-          await this.request('DELETE', '/session/active');
-        } catch (_) {}
+        console.error('Stale session locked in WebDriver. Attempting recovery...');
+        const stored = this.loadSessionId();
+        if (stored) {
+          try {
+            await this.request('DELETE', `/session/${stored}`);
+            this.saveSessionId(null);
+            // Retry session creation
+            const retryRes = await this.request('POST', '/session', { capabilities: { alwaysMatch: {} } });
+            const retryId = retryRes?.value?.sessionId || retryRes?.sessionId;
+            if (retryId) {
+              this.saveSessionId(retryId);
+              return this.currentSessionId!;
+            }
+          } catch (_) {}
+        }
       }
       throw new Error(
-        `Failed to create session in Ladybird WebDriver at ${this.baseUrl}: ${err.message}. If single-session is locked, restart WebDriver.`
+        `Failed to create session in Ladybird WebDriver at ${this.baseUrl}: ${err.message}.`
       );
     }
   }
 
-  async navigate(url: string): Promise<void> {
-    const sessionId = await this.ensureSession();
+  async navigate(url: string, headless: boolean = false): Promise<void> {
+    const sessionId = await this.ensureSession(headless);
     await this.request('POST', `/session/${sessionId}/url`, { url });
   }
 
@@ -229,12 +277,24 @@ export class LadybirdWebDriverClient {
     await this.executeScript(`window.scrollBy(0, ${scrollY});`);
   }
 
+  async waitForLoad(timeoutMs: number = 5000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const state = await this.executeScript('return document.readyState;');
+        if (state === 'complete') return true;
+      } catch (_) {}
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return false;
+  }
+
   async closeSession(): Promise<void> {
     if (this.currentSessionId) {
       try {
         await this.request('DELETE', `/session/${this.currentSessionId}`);
       } catch (_) {}
-      this.currentSessionId = null;
+      this.saveSessionId(null);
     }
   }
 }
