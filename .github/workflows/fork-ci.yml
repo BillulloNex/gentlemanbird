@@ -1,0 +1,98 @@
+name: Fork CI
+
+# CI for this fork. The upstream workflows in this directory are all gated on
+# `github.repository == 'LadybirdBrowser/ladybird'` and so never run here; this is a trimmed-down
+# replacement that builds and tests what this fork actually targets.
+#
+# macOS is the primary platform: the AppKit UI code (and its clipboard tests) only builds there.
+# GitHub-hosted macOS runners are free and unmetered for public repositories.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  LADYBIRD_SOURCE_DIR: ${{ github.workspace }}
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  VCPKG_ROOT: ${{ github.workspace }}/Build/vcpkg
+  # Only the compiler version participates in the ccache hash, matching upstream's setup.
+  CCACHE_COMPILERCHECK: "%compiler% -v"
+
+jobs:
+  macos:
+    name: macOS, arm64, Release
+    runs-on: macos-14
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set Up Environment
+        uses: ./.github/actions/setup
+        id: setup
+        with:
+          os: macOS
+          arch: arm64
+          toolchain: Clang
+
+      - name: Restore Caches
+        uses: ./.github/actions/cache-restore
+        id: cache-restore
+        with:
+          os: macOS
+          arch: arm64
+          toolchain: Clang
+          cache_key_extra: fork-Release
+          ccache_path: ${{ steps.setup.outputs.ccache_path }}
+          vcpkg_cache_path: ${{ steps.setup.outputs.vcpkg_cache_path }}
+
+      - name: Create Build Environment
+        run: |
+          cmake --preset Release -B Build \
+            -DPython3_EXECUTABLE=${{ env.pythonLocation }}/bin/python \
+            -DCMAKE_C_COMPILER=$(xcrun --find clang) \
+            -DCMAKE_CXX_COMPILER=$(xcrun --find clang++)
+
+      - name: Build
+        working-directory: ${{ github.workspace }}/Build
+        run: cmake --build .
+
+      - name: Save Caches
+        uses: ./.github/actions/cache-save
+        with:
+          arch: arm64
+          ccache_path: ${{ steps.setup.outputs.ccache_path }}
+          ccache_primary_key: ${{ steps.cache-restore.outputs.ccache_primary_key }}
+          vcpkg_cache_path: ${{ steps.setup.outputs.vcpkg_cache_path }}
+          vcpkg_cache_primary_key: ${{ steps.cache-restore.outputs.vcpkg_cache_primary_key }}
+
+      # Fail loudly rather than skipping. A silently-absent AppKit test would recreate exactly the
+      # blind spot these tests exist to close -- see message_board/0002_agent_testable_surface.md.
+      - name: Verify the AppKit tests are registered
+        working-directory: ${{ github.workspace }}
+        run: |
+          if ! ctest --test-dir Build -N | grep -q "TestClipboard"; then
+            echo "::error::TestClipboard is not registered with ctest -- the AppKit UI tests are not running."
+            exit 1
+          fi
+
+      - name: Test
+        working-directory: ${{ github.workspace }}
+        run: ctest --test-dir Build --output-on-failure --timeout 1800
+        env:
+          TESTS_ONLY: 1
+
+      - name: Upload LibWeb Test Artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: libweb-test-artifacts-macos-arm64
+          path: Build/Tests/LibWeb/test-web/test-dumps/
+          retention-days: 7
+          if-no-files-found: ignore
