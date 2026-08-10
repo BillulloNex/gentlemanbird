@@ -27,7 +27,9 @@ env:
 jobs:
   macos:
     name: macOS, arm64, Release
-    runs-on: macos-14
+    # .github/actions/setup pins Xcode 26.2, which only the macos-26 image carries. Keep this on the plain
+    # (standard) label: the -large and -xlarge variants are larger runners, which are billed even for public repos.
+    runs-on: macos-26
     timeout-minutes: 120
 
     steps:
