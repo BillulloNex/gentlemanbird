@@ -15,8 +15,7 @@ export interface FormattedAXTreeResult {
 /**
  * Injected script that runs inside Ladybird WebContent to build the compact element list with integer IDs
  */
-export const INJECTED_AX_WALKER_SCRIPT = `
-(function() {
+export const INJECTED_AX_WALKER_SCRIPT = `return (function() {
   const interactiveRoles = new Set(['button', 'link', 'textbox', 'checkbox', 'radio', 'combobox', 'listbox', 'tab', 'menuitem', 'option', 'searchbox']);
   const interactiveTags = new Set(['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'SUMMARY', 'DETAILS']);
   
@@ -65,9 +64,9 @@ export const INJECTED_AX_WALKER_SCRIPT = `
     
     if (!isVisible(elem)) return;
 
-    const tag = elem.tagName;
+    const tag = elem.tagName.toUpperCase();
     const role = getRole(elem);
-    const isInteractive = interactiveTags.has(tag) || interactiveRoles.has(role) || elem.hasAttribute('onclick') || elem.getAttribute('tabindex') === '0';
+    const isInteractive = interactiveTags.has(tag) || interactiveRoles.has(role) || elem.hasAttribute('href') || elem.hasAttribute('onclick') || elem.getAttribute('tabindex') === '0';
 
     if (isInteractive) {
       const id = currentId++;
@@ -91,6 +90,7 @@ export const INJECTED_AX_WALKER_SCRIPT = `
       walk(child);
     }
   }
+
 
   walk(document.body);
   return elements;
