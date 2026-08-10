@@ -25,7 +25,6 @@ export class LadybirdWebDriverClient {
 
   constructor(baseUrl: string = 'http://127.0.0.1:8000') {
     this.baseUrl = baseUrl;
-    this.registerExitHooks();
   }
 
   private saveSessionId(id: string | null) {
@@ -47,28 +46,6 @@ export class LadybirdWebDriverClient {
       }
     } catch (_) {}
     return null;
-  }
-
-  private registerExitHooks() {
-    const cleanup = () => {
-      if (this.currentSessionId) {
-        try {
-          const url = new URL(`/session/${this.currentSessionId}`, this.baseUrl);
-          const req = http.request(url, { method: 'DELETE' });
-          req.end();
-          if (fs.existsSync(SESSION_FILE_PATH)) fs.unlinkSync(SESSION_FILE_PATH);
-        } catch (_) {}
-      }
-    };
-
-    process.on('SIGINT', () => {
-      cleanup();
-      process.exit(0);
-    });
-    process.on('SIGTERM', () => {
-      cleanup();
-      process.exit(0);
-    });
   }
 
   private async request(method: string, path: string, body?: any): Promise<any> {
@@ -154,60 +131,52 @@ export class LadybirdWebDriverClient {
   }
 
   async ensureSession(headless: boolean = false): Promise<string> {
+    // 1. Check in-memory session ID first
     if (this.currentSessionId) {
-      return this.currentSessionId;
+      try {
+        await this.request('GET', `/session/${this.currentSessionId}/url`);
+        return this.currentSessionId;
+      } catch (_) {
+        this.currentSessionId = null;
+      }
     }
 
+    // 2. Check persisted session ID in /tmp/ladybird-session.json
+    const storedSessionId = this.loadSessionId();
+    if (storedSessionId) {
+      try {
+        const urlRes = await this.request('GET', `/session/${storedSessionId}/url`);
+        if (urlRes !== undefined) {
+          this.currentSessionId = storedSessionId;
+          console.error(`Reusing active Ladybird browser session: ${storedSessionId}`);
+          return this.currentSessionId;
+        }
+      } catch (_) {
+        this.saveSessionId(null);
+      }
+    }
+
+    // 3. Ensure service is running
     if (!(await this.isServiceRunning())) {
       await this.autoSpawnWebDriver(headless);
     }
 
-    // Try cleaning up any orphaned session from previous process
-    const storedSessionId = this.loadSessionId();
-    if (storedSessionId) {
-      try {
-        await this.request('DELETE', `/session/${storedSessionId}`);
-      } catch (_) {}
-      this.saveSessionId(null);
-    }
-
+    // 4. Create new session only if no active session exists
     try {
       const res = await this.request('POST', '/session', {
         capabilities: {
           alwaysMatch: {},
         },
       });
-      let id: string | null = null;
-      if (res && res.value && res.value.sessionId) {
-        id = res.value.sessionId;
-      } else if (res && res.sessionId) {
-        id = res.sessionId;
-      }
+      let id: string | null = res?.value?.sessionId || res?.sessionId || null;
       if (!id) {
         throw new Error(`Unexpected session creation response: ${JSON.stringify(res)}`);
       }
       this.saveSessionId(id);
       return this.currentSessionId!;
     } catch (err: any) {
-      if (err.message && err.message.includes('session not created')) {
-        console.error('Stale session locked in WebDriver. Attempting recovery...');
-        const stored = this.loadSessionId();
-        if (stored) {
-          try {
-            await this.request('DELETE', `/session/${stored}`);
-            this.saveSessionId(null);
-            // Retry session creation
-            const retryRes = await this.request('POST', '/session', { capabilities: { alwaysMatch: {} } });
-            const retryId = retryRes?.value?.sessionId || retryRes?.sessionId;
-            if (retryId) {
-              this.saveSessionId(retryId);
-              return this.currentSessionId!;
-            }
-          } catch (_) {}
-        }
-      }
       throw new Error(
-        `Failed to create session in Ladybird WebDriver at ${this.baseUrl}: ${err.message}.`
+        `Failed to create session in Ladybird WebDriver at ${this.baseUrl}: ${err.message}`
       );
     }
   }
