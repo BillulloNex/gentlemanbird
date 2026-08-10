@@ -84,6 +84,33 @@ jobs:
             exit 1
           fi
 
+      # GitHub-hosted macOS runners are virtualised and have no usable GPU, so every WebGL and WebXR test fails there.
+      # They pass on real hardware, so skipping them is a property of this runner rather than of the tests -- hence
+      # doing it here instead of in the checked-in TestConfig.ini, which would weaken local runs too.
+      - name: Skip GPU-dependent tests (no GPU on hosted runners)
+        working-directory: ${{ github.workspace }}
+        run: |
+          cat >> Tests/LibWeb/TestConfig.ini <<'EOF'
+
+          ; Appended by Fork CI: hosted macOS runners have no GPU.
+          Crash/HTML/canvas-webgl-in-detached-doc.html
+          Crash/HTML/webgl-large-command-buffer.html
+          Text/input/canvas/drawimage-webgl-canvas-source.html
+          Text/input/canvas/webgl-capability-only-extension-object.html
+          Text/input/canvas/webgl-create-canvas.html
+          Text/input/canvas/webgl-detached-buffer-source.html
+          Text/input/canvas/webgl-draw-does-not-invalidate-display-list.html
+          Text/input/canvas/webgl-draw-invalidates-cached-command.html
+          Text/input/canvas/webgl-framebuffer-attachment-parameter.html
+          Text/input/canvas/webgl-many-image-source-uploads.html
+          Text/input/canvas/webgl-oes-vertex-array-object-binding.html
+          Text/input/canvas/webgl-present-with-bound-offscreen-framebuffer.html
+          Text/input/canvas/webgl2-tex-image-3d-null.html
+          Text/input/canvas/webgl2-tex-image-3d-source.html
+          Text/input/wpt-import/webxr/xrSession_end.https.html
+          EOF
+          tail -18 Tests/LibWeb/TestConfig.ini
+
       - name: Test
         working-directory: ${{ github.workspace }}
         run: ctest --test-dir Build --output-on-failure --timeout 1800
