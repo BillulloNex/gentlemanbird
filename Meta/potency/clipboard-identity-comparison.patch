@@ -1,0 +1,26 @@
+Reintroduces the bug fixed in "UI/AppKit: Fix pasting by comparing pasteboard types by value".
+
+NSPasteboardType is an NSString. Comparing with == tests pointer identity, which only holds when
+this same process wrote the pasteboard. Types written by another application are reconstructed as
+distinct objects, so every such paste produced no representations at all.
+
+Used by Meta/check-test-potency.sh to prove Tests/UI/AppKit/TestClipboard.mm detects this.
+
+diff --git a/UI/AppKit/Application/Clipboard.mm b/UI/AppKit/Application/Clipboard.mm
+--- a/UI/AppKit/Application/Clipboard.mm
++++ b/UI/AppKit/Application/Clipboard.mm
+@@ -19,11 +19,11 @@ namespace Ladybird {
+ {
+     // NB: The types reported by the pasteboard are deserialized from the pasteboard server, so they are not the same
+     //     objects as the NSPasteboardType constants. They must be compared by value, not by identity.
+-    if ([type isEqualToString:NSPasteboardTypeString])
++    if (type == NSPasteboardTypeString)
+         return "text/plain"_string;
+-    if ([type isEqualToString:NSPasteboardTypeHTML])
++    if (type == NSPasteboardTypeHTML)
+         return "text/html"_string;
+-    if ([type isEqualToString:NSPasteboardTypePNG])
++    if (type == NSPasteboardTypePNG)
+         return "image/png"_string;
+     return {};
+ }

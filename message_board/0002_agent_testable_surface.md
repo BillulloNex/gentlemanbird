@@ -191,3 +191,59 @@ Steps 1–3 are the decision point. If the macOS test target turns out to be hos
 Do we keep the headless fakes? Contract-testing them is more work than deleting them and always running the real backend, but it is the difference between a 2-minute suite and a much slower one. My recommendation is keep-and-verify, but it is a real trade and it shapes items 1, 4, and 9 above.
 
 *Signed by Claude Code*
+
+---
+
+## Chat 2: Pilot Results — What the Clipboard Fix Actually Taught Us
+
+- **Date**: 2026-08-10
+- **Author**: Claude Code
+
+### Decisions taken
+
+Scope is **personal fork, macOS-only** (no Qt binding, no Linux/xvfb work). Headless fakes are **kept and contract-tested**, not deleted. CI is **enabled** — the repo is public, so GitHub-hosted macOS runners are free and unmetered.
+
+### The most important technical finding
+
+The pilot's first design was **wrong, and the red-green check is the only reason we found out.**
+
+The plan was to point `test-web` at a real `NSPasteboard` so the existing clipboard tests would cover the real code. That was built, the tests passed — and they *still passed with the pointer-comparison bug deliberately reintroduced*. A direct probe of `NSPasteboard` explains why:
+
+| How the pasteboard was written | `==` identity | `isEqualToString:` |
+| :--- | :--- | :--- |
+| Same process, same `NSPasteboard` object | **YES** | YES |
+| Same process, freshly obtained `NSPasteboard` | **YES** | YES |
+| **Separate process** | **NO** | YES |
+
+`NSPasteboard` hands back the very same `NSString` objects the writing process passed in. Because `test-web` seeds its own clipboard, it compares the global `NSPasteboardType` constants against themselves and the broken comparison succeeds. Only a genuinely foreign writer forces AppKit to reconstruct the types — which is what a real paste does, since the user copied from another application.
+
+So `Tests/UI/AppKit/TestClipboard.mm` re-execs the test binary in a writer mode to populate a private pasteboard from outside the process. **Verified: fails with the old comparison, passes with the fix.**
+
+Two lessons generalize beyond the clipboard:
+
+1. **A real backend is not automatically a real test.** Using the genuine platform object was necessary but nowhere near sufficient; the bug lived in a cross-process property that same-process use cannot reproduce. When replacing a fake, ask what *property* the bug depends on, not just which object.
+2. **Potency checking is the load-bearing step, not a formality.** Without it this session would have shipped a test that proved nothing and reported success — the exact failure mode predicted in Chat 1, item 5, reached anyway by the agent that predicted it.
+
+### Landed
+
+- `UI/AppKit/Application/Clipboard.{h,mm}` — pasteboard translation extracted, takes the pasteboard as a parameter, de-duplicates mapping that existed in two places
+- `Tests/UI/AppKit/` — the target did not exist; the only prior UI test is Qt-only behind `if (NOT LINUX) return()` and had never run on this machine
+- `Tests/LibWeb/test-web/ClipboardMacOS.mm` — test-web on a real private pasteboard. Worth keeping, but per the above it does **not** catch this bug class on its own
+- `.github/workflows/fork-ci.yml` — macOS build + test, and fails loudly if `TestClipboard` is not registered
+- `Meta/check-test-potency.sh` — the red-green check from Chat 1 item 5, now a script instead of a manual ritual
+
+Full suite: **259/259 passing in 46.8s** on an unloaded machine.
+
+### Pothole updates
+
+- **#1 (no AppKit test target)** — resolved, `Tests/UI/AppKit/` now exists.
+- **#2 / #8 / #11 (CI-premised)** — reactivated, since CI is now real. But hosted `macos-26` runners replace upstream's self-hosted fleet, so the "runner may lack a GUI session" concern is now a live question to watch rather than a settled non-issue.
+- **#4 (`pasteboardWithUniqueName`)** — confirmed available, in use.
+- **NEW: the shared setup action pins Xcode 26.2.** Only the `macos-26` image carries it; the first CI run died on `macos-14`. Keep the plain label — `-large`/`-xlarge` are larger runners, billed even on public repos.
+- **NEW: there is no local vcpkg binary cache.** A second build tree (which coverage instrumentation requires) would rebuild every third-party dependency from source. This is the main obstacle to milestone #4 and should be budgeted for, or worked around with `-DVCPKG_INSTALLED_DIR` pointed at the existing tree.
+
+### Where this leaves the initiative
+
+**1 of 29** `headless_mode` divergence sites closed. Still open: the contract-test harness, the coverage backlog generator (see the vcpkg caveat above), and wiring the potency script into CI so it runs on new tests automatically rather than on request.
+
+*Signed by Claude Code*
