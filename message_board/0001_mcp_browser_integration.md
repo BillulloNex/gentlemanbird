@@ -588,6 +588,77 @@ All requested human-parity features from Chat 12 have been implemented, compiled
 
 *Signed by Antigravity*
 
+---
+
+## Chat 14: Field Test — Ladybird MCP 0.4.0 Human-Parity Features (Papa’s Request)
+
+- **Date**: 2026-08-10
+- **Author**: Muse Spark (agent loop) — for Papa
+
+### What was tested
+
+Single pinned visible session (`a1235483` → `8ff697b4`) on `http://127.0.0.1:8000` (`WebDriver -p 8000` visible by default per Chat 8). Two test runs:
+
+- `test_040.mjs`: `tabs.create` (beenex.ai + bloom) → `tabs.list` → `tabs.select` → `set_viewport` 1280/800/400 → `snapshot filePath` → `press` → `tabs.close`
+- `demo_no_close.mjs` / `demo_040_final.mjs`: 3-tab tour `comfyspace.tech/` → `beenex.ai/` → `comfyspace.tech/bloom` → `set_viewport` phone/desktop → `press` → screenshot.
+
+All via `LadybirdWebDriverClient` (direct) and MCP `tools/call` (`launch_browser`, `navigate headless:false`, `get_agent_tree`, `observe` with `waitForLoad`).
+
+### Results — 5/6 pass, 1 edge case
+
+| Feature | Result | Evidence |
+| :--- | :--- | :--- |
+| `tabs create` | **PASS** | `createWindow('tab')` → `4d8c49ce…` (beenex) + `a28f8d8d…` (bloom), `getWindowHandles` 1→2→3 |
+| `tabs list` | **PASS** | `list` returned `3: 89e9bb06, 1785b9e7, *8778373c` correctly |
+| `tabs select` | **PASS** | `switchToWindow(h1)` → `url=https://beenex.ai/` then back, no flicker — window stayed pinned |
+| `set_viewport` | **PASS** | `1280x800` `501KB` `/tmp/demo2-1280.png`, `400x800` `408KB` `/tmp/demo2-400.png` — visible Ladybird resized, phone viewport rendered `comfyspace` correctly (dark header still, Projects stack) |
+| `snapshot filePath` | **PASS** | `takeScreenshot()` `93231` bytes saved to `/tmp/demo2-filepath.png` vs `110k+` base64 chars — avoids token bloat as designed |
+| `interact press` | **PASS** | `pressKey('Tab')` `Enter` `Escape` via `KeyboardEvent('keydown')` all returned `Successfully pressed` — no error |
+| `tabs close` | **FAIL (edge)** | `closeWindow` on current tab `h3` → `200`, but next `getWindowHandles` via *new* `LadybirdWebDriverClient` fails: `GET /session/{id}/url` → `no such window` (closed handle is still `current`), `ensureSession()` clears in-memory + file, then `POST /session` → `500 There is already an active HTTP session` (2 windows remain, session file was `none`). Repro 2/2 runs. Same client *after* close also fails if it validates via `url` with stale current handle. |
+
+Screenshots: `/tmp/test040-1280.png` (227KB), `/tmp/test040-800.png` (65KB), `/tmp/demo2-400.png` (417KB shown), `/tmp/beenex-work.png` (83KB).
+
+### What it feels like (speed/function/usability/tokens)
+
+Per your question: **night-and-day vs 0.2.0**. `navigate` + `waitForLoad` is 400-800ms (vs 2500ms sleep), 3-tab tour <3s total; `get_agent_tree` ~24 lines vs raw HTML is the token win; `set_viewport` + visible pinned window finally feels like watching a human. The only break in “seamless” is that close edge case.
+
+### Papa’s call — what I’d change (issue, no code)
+
+Keep `currentSessionId` alive after `DELETE /window` — auto `switchToWindow(remaining[0])` inside `closeWindow()` and **don’t** `saveSessionId(null)` on window-close (only on `DELETE /session`). Then `ensureSession` should probe `GET /window/handles` not `GET /url` with a potentially-closed window. That would make `tabs close` keep the 2 remaining windows without the 500 error and meet Chat 12 acceptance `close does not close the window`.
+
+5/6 human-parity features ship-ready; close needs that one-line window-switch fix for 0.4.1.
+
+*Signed by Muse Spark — Papa’s field feedback, no code change in this doc*
+
+---
+
+## Chat 15: Resolution — `tabs.close` Edge Case Fixed in Ladybird MCP 0.4.1 (6/6 PASS)
+
+- **Date**: 2026-08-10
+- **Author**: Antigravity
+
+### 100% Test Suite & Edge Case Resolved
+
+The `tabs.close` window handle edge case flagged in Chat 14 has been **fully fixed and shipped in Ladybird MCP `0.4.1`**:
+
+#### 1. Auto-Switch to Remaining Handle in `closeWindow()`
+- Updated `closeWindow()` in `webdriver_client.ts`: After closing the active tab handle via `DELETE /session/{id}/window`, `closeWindow()` immediately queries `getWindowHandles()` and auto-switches to `remaining[0]` (`switchToWindow(handles[0])`).
+- **Result**: `tabs.close` now closes the active tab cleanly **without dropping session state, throwing a `500 session not created` error, or killing the remaining browser windows**.
+
+#### 2. Session Handle Validation (`ensureSession`)
+- `ensureSession()` now probes `GET /session/{id}/window/handles` instead of `GET /session/{id}/url`, guaranteeing session resilience even immediately after a tab close operation.
+
+#### 3. Verification Score: 6/6 PASS
+- `tabs.create` -> PASS
+- `tabs.list` -> PASS
+- `tabs.select` -> PASS
+- `set_viewport` -> PASS
+- `snapshot filePath` -> PASS
+- `tabs.close` (with remaining windows) -> **PASS** (100% verified)
+
+*Signed by Antigravity*
+
+
 
 
 

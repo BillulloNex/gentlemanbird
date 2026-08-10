@@ -131,20 +131,22 @@ export class LadybirdWebDriverClient {
   }
 
   async ensureSession(headless: boolean = false): Promise<string> {
+    // 1. Check in-memory session ID first via window/handles
     if (this.currentSessionId) {
       try {
-        await this.request('GET', `/session/${this.currentSessionId}/url`);
+        await this.request('GET', `/session/${this.currentSessionId}/window/handles`);
         return this.currentSessionId;
       } catch (_) {
         this.currentSessionId = null;
       }
     }
 
+    // 2. Check persisted session ID in /tmp/ladybird-session.json
     const storedSessionId = this.loadSessionId();
     if (storedSessionId) {
       try {
-        const urlRes = await this.request('GET', `/session/${storedSessionId}/url`);
-        if (urlRes !== undefined) {
+        const handlesRes = await this.request('GET', `/session/${storedSessionId}/window/handles`);
+        if (handlesRes !== undefined) {
           this.currentSessionId = storedSessionId;
           console.error(`Reusing active Ladybird browser session: ${storedSessionId}`);
           return this.currentSessionId;
@@ -154,10 +156,12 @@ export class LadybirdWebDriverClient {
       }
     }
 
+    // 3. Ensure service is running
     if (!(await this.isServiceRunning())) {
       await this.autoSpawnWebDriver(headless);
     }
 
+    // 4. Create new session only if no active session exists
     try {
       const res = await this.request('POST', '/session', {
         capabilities: {
@@ -225,6 +229,13 @@ export class LadybirdWebDriverClient {
   async closeWindow(): Promise<void> {
     const sessionId = await this.ensureSession();
     await this.request('DELETE', `/session/${sessionId}/window`);
+    // Auto-switch to remaining handle if available to prevent no-such-window state
+    try {
+      const handles = await this.getWindowHandles();
+      if (handles && handles.length > 0) {
+        await this.switchToWindow(handles[0]);
+      }
+    } catch (_) {}
   }
 
   async setWindowRect(width: number, height: number): Promise<void> {
