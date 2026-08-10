@@ -41,8 +41,8 @@ struct LineRelativeAlignedSubtree {
     shift: CssPixels,
 }
 
-pub(crate) struct LineBuilder<'builder, 'context, 'pass> {
-    context: &'builder InlineFormattingContext<'context, 'pass>,
+pub(crate) struct LineBuilder<'builder, 'context> {
+    context: &'builder InlineFormattingContext<'context>,
     available_inline_size_for_current_line: AvailableSize,
     current_block_offset: CssPixels,
     max_block_size_on_current_line: CssPixels,
@@ -58,8 +58,8 @@ pub(crate) struct LineBuilder<'builder, 'context, 'pass> {
     pending_margin_follows_block_level_box: bool,
 }
 
-impl<'builder, 'context, 'pass> LineBuilder<'builder, 'context, 'pass> {
-    pub(crate) fn new(context: &'builder InlineFormattingContext<'context, 'pass>) -> Self {
+impl<'builder, 'context> LineBuilder<'builder, 'context> {
+    pub(crate) fn new(context: &'builder InlineFormattingContext<'context>) -> Self {
         let style = context.style(context.containing_block);
         let containing_inline_size = context.input.containing_block_constraints.inline_basis();
         let mut builder = Self {
@@ -82,7 +82,7 @@ impl<'builder, 'context, 'pass> LineBuilder<'builder, 'context, 'pass> {
         builder
     }
 
-    fn context(&self) -> &InlineFormattingContext<'context, 'pass> {
+    fn context(&self) -> &InlineFormattingContext<'context> {
         self.context
     }
 
@@ -128,8 +128,6 @@ impl<'builder, 'context, 'pass> LineBuilder<'builder, 'context, 'pass> {
             style_source,
             is_atomic_inline: facts.is_atomic_inline(),
             white_space_collapse: style.white_space_collapse(),
-            letter_spacing: style.letter_spacing(),
-            first_available_font: style.first_available_font(),
             text_utf16,
             text_length_in_code_units: text_length,
         }
@@ -254,18 +252,10 @@ impl<'builder, 'context, 'pass> LineBuilder<'builder, 'context, 'pass> {
             None,
             fragment_facts,
             text_align_is_justify,
+            TrailingWhitespace::default(),
         );
         self.line_mut(line_index).fragments[fragment_index].content_baselines = Some(content_baselines);
         self.max_block_size_on_current_line = self.max_block_size_on_current_line.max(margin_block_size);
-        let used = self.context().used(node);
-        used.has_containing_line_box_fragment.set(false);
-        if self.context().facts(node).is_atomic_inline() {
-            used.has_containing_line_box_fragment.set(true);
-            used.containing_line_box_fragment.set(LineBoxFragmentCoordinate {
-                line_box_index: line_index,
-                fragment_index,
-            });
-        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -281,6 +271,7 @@ impl<'builder, 'context, 'pass> LineBuilder<'builder, 'context, 'pass> {
         content_inline_size: CssPixels,
         content_block_size: CssPixels,
         glyphs: GlyphData,
+        trailing_whitespace: TrailingWhitespace,
     ) {
         self.prepare_to_append_inline_content();
         let line_index = self.ensure_last_line_index();
@@ -301,6 +292,7 @@ impl<'builder, 'context, 'pass> LineBuilder<'builder, 'context, 'pass> {
             Some(glyphs),
             facts,
             text_align_is_justify,
+            trailing_whitespace,
         );
         let line_block_length = self.line(line_index).block_length;
         self.max_block_size_on_current_line = self.max_block_size_on_current_line.max(line_block_length);
@@ -433,8 +425,7 @@ impl<'builder, 'context, 'pass> LineBuilder<'builder, 'context, 'pass> {
         let mut candidate = self.current_block_offset;
         let line_index = self.ensure_last_line_index();
         let mut line = self.line_mut(line_index);
-        let current_line_inline_size =
-            line.physical_horizontal_extent() - line.trailing_whitespace_inline_size(self.context());
+        let current_line_inline_size = line.physical_horizontal_extent() - line.trailing_whitespace_inline_size();
         let line_is_empty_or_whitespace = line.is_empty_or_ends_in_whitespace();
         drop(line);
         let mut needed = current_line_inline_size;
@@ -649,19 +640,17 @@ impl<'builder, 'context, 'pass> LineBuilder<'builder, 'context, 'pass> {
                 Self::baseline_for_style(style, style.line_height())
             } else if let Some(content_baselines) = content_baselines {
                 crate::layout::box_baseline_with_content_baselines(
-                    self.context().state,
                     &self.context().callbacks,
                     node,
-                    self.context().used(node),
+                    &self.context().used(node),
                     crate::layout::BaselineSet::Last,
                     content_baselines,
                 )
             } else {
                 crate::layout::box_baseline(
-                    self.context().state,
                     &self.context().callbacks,
                     node,
-                    self.context().used(node),
+                    &self.context().used(node),
                     crate::layout::BaselineSet::Last,
                 )
             };

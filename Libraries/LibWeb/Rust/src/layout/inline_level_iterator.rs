@@ -32,6 +32,7 @@ pub(crate) struct Item {
     pub(crate) can_break_before: bool,
     pub(crate) preceded_by_unattached_inline_start_edges: bool,
     pub(crate) content_baselines: DerivedBaselines,
+    pub(crate) trailing_whitespace: TrailingWhitespace,
 }
 
 impl Item {
@@ -53,6 +54,7 @@ impl Item {
             can_break_before: false,
             preceded_by_unattached_inline_start_edges: false,
             content_baselines: DerivedBaselines::default(),
+            trailing_whitespace: TrailingWhitespace::default(),
         }
     }
 
@@ -78,8 +80,8 @@ struct TextNodeContext {
     last_known_direction: Option<u8>,
 }
 
-struct InlineLevelIteratorGenerator<'iterator, 'context, 'pass> {
-    context: &'iterator mut InlineFormattingContext<'context, 'pass>,
+struct InlineLevelIteratorGenerator<'iterator, 'context> {
+    context: &'iterator mut InlineFormattingContext<'context>,
     current_node: Node,
     next_node: Node,
     text_node_context: Option<TextNodeContext>,
@@ -94,8 +96,8 @@ struct InlineLevelIteratorGenerator<'iterator, 'context, 'pass> {
     previous_chunk_can_break_after: bool,
 }
 
-impl<'iterator, 'context, 'pass> InlineLevelIteratorGenerator<'iterator, 'context, 'pass> {
-    fn generate(context: &'iterator mut InlineFormattingContext<'context, 'pass>) -> InlineLevelIterator {
+impl<'iterator, 'context> InlineLevelIteratorGenerator<'iterator, 'context> {
+    fn generate(context: &'iterator mut InlineFormattingContext<'context>) -> InlineLevelIterator {
         let containing_block = context.containing_block;
         let next_node = context.first_child(containing_block);
         let mut iterator = Self {
@@ -123,11 +125,11 @@ impl<'iterator, 'context, 'pass> InlineLevelIteratorGenerator<'iterator, 'contex
         }
     }
 
-    fn context(&self) -> &InlineFormattingContext<'context, 'pass> {
+    fn context(&self) -> &InlineFormattingContext<'context> {
         self.context
     }
 
-    fn context_mut(&mut self) -> &mut InlineFormattingContext<'context, 'pass> {
+    fn context_mut(&mut self) -> &mut InlineFormattingContext<'context> {
         self.context
     }
 
@@ -207,6 +209,9 @@ impl<'iterator, 'context, 'pass> InlineLevelIteratorGenerator<'iterator, 'contex
         leading.border += used.border_left.get();
         leading.padding += used.padding_left.get();
         self.context().compute_inset(node);
+        if self.context().run.fragments.is_some() {
+            crate::layout::place_child(self.context().run, node, FfiCssPixelPoint::default(), None);
+        }
         self.box_model_node_stack.push(node);
     }
 
@@ -307,7 +312,7 @@ impl<'iterator, 'context, 'pass> InlineLevelIteratorGenerator<'iterator, 'contex
             white_space_collapse::COLLAPSE | white_space_collapse::PRESERVE_BREAKS
         );
         let callbacks = self.context().callbacks;
-        let chunks = self.context().state.text_chunks(
+        let chunks = text_chunks(
             &callbacks,
             text_node,
             should_wrap_lines,
@@ -353,14 +358,20 @@ impl<'iterator, 'context, 'pass> InlineLevelIteratorGenerator<'iterator, 'contex
         text_type: u8,
         baseline_start_x: f32,
         letter_spacing: f32,
-    ) -> GlyphData {
-        let (glyphs, width) = shape_text_with_font(font, text, text_type, baseline_start_x, letter_spacing);
-        GlyphData {
-            glyphs,
+        word_spacing: f32,
+    ) -> (GlyphData, TrailingWhitespace) {
+        let shaped = shape_text_with_font(font, text, text_type, baseline_start_x, letter_spacing, word_spacing);
+        let glyph_data = GlyphData {
+            glyphs: shaped.glyphs,
             font,
             text_type,
-            width,
-        }
+            width: shaped.width,
+        };
+        let trailing_whitespace = TrailingWhitespace {
+            length_in_code_units: shaped.trailing_whitespace_length_in_code_units,
+            inline_size: CssPixels::nearest_value_for_f32(shaped.trailing_whitespace_advance),
+        };
+        (glyph_data, trailing_whitespace)
     }
 
     fn add_extra_box_model_metrics_to_item(
@@ -443,13 +454,13 @@ impl<'iterator, 'context, 'pass> InlineLevelIteratorGenerator<'iterator, 'contex
         let full_text = text_context.text;
         let mut shaped_start = chunk.start;
         let mut shaped_length = chunk.length;
+        let word_spacing = style.word_spacing();
         if chunk.has_breaking_tab {
             let tab_inline_size = if style.tab_size_is_number() {
                 let space = font_glyph_width(chunk.font, b' ' as u32);
                 CssPixels::nearest_value_for(
                     style.tab_size_number()
-                        * (space + style.word_spacing().to_double() as f32 + style.letter_spacing().to_double() as f32)
-                            as f64,
+                        * (space + word_spacing.to_double() as f32 + style.letter_spacing().to_double() as f32) as f64,
                 )
             } else {
                 style.tab_size()
@@ -474,12 +485,13 @@ impl<'iterator, 'context, 'pass> InlineLevelIteratorGenerator<'iterator, 'contex
             inline_offset = tab_stop_distance.to_double() as f32;
         }
         let shaped_text = &full_text[shaped_start..shaped_start + shaped_length];
-        let glyphs = self.shape_text(
+        let (glyphs, shaped_trailing_whitespace) = self.shape_text(
             shaped_text,
             chunk.font,
             text_type,
             inline_offset,
             style.letter_spacing().to_double() as f32,
+            word_spacing.to_double() as f32,
         );
         let chunk_inline_size = CssPixels::nearest_value_for_f32(glyphs.width + inline_offset);
         let generated_empty = synthesize_zero_length_chunk
@@ -489,6 +501,14 @@ impl<'iterator, 'context, 'pass> InlineLevelIteratorGenerator<'iterator, 'contex
         item.offset_in_node = chunk.start;
         item.length_in_node = chunk.length;
         item.inline_size = chunk_inline_size;
+        item.trailing_whitespace = if chunk.is_all_whitespace {
+            TrailingWhitespace {
+                length_in_code_units: chunk.length,
+                inline_size: chunk_inline_size,
+            }
+        } else {
+            shaped_trailing_whitespace
+        };
         item.is_collapsible_whitespace =
             text_context.should_collapse_whitespace && chunk.is_all_whitespace && !generated_empty;
         item.can_break_before = self.previous_chunk_can_break_after;
@@ -577,7 +597,7 @@ pub(crate) struct InlineLevelIterator {
 }
 
 impl InlineLevelIterator {
-    pub(crate) fn new(context: &mut InlineFormattingContext<'_, '_>) -> Self {
+    pub(crate) fn new(context: &mut InlineFormattingContext<'_>) -> Self {
         InlineLevelIteratorGenerator::generate(context)
     }
 
@@ -595,7 +615,7 @@ impl InlineLevelIterator {
 
     pub(crate) fn next_non_whitespace_sequence_inline_size(
         &self,
-        context: &InlineFormattingContext<'_, '_>,
+        context: &InlineFormattingContext<'_>,
     ) -> CssPixels {
         let mut size = CssPixels::default();
         for item in &self.items[self.next_item_index..] {
@@ -620,7 +640,7 @@ impl InlineLevelIterator {
         size
     }
 
-    pub(crate) fn item_is_ascii_whitespace(&self, context: &InlineFormattingContext<'_, '_>, item: &Item) -> bool {
+    pub(crate) fn item_is_ascii_whitespace(&self, context: &InlineFormattingContext<'_>, item: &Item) -> bool {
         assert_eq!(item.type_, ItemType::Text);
         let text = &context.callbacks.text_content(item.node).text;
         text[item.offset_in_node..item.offset_in_node + item.length_in_node]
