@@ -12,7 +12,7 @@ const client = new LadybirdWebDriverClient(webDriverUrl);
 const server = new Server(
   {
     name: 'ladybird-mcp',
-    version: '0.1.0',
+    version: '0.2.0',
   },
   {
     capabilities: {
@@ -41,7 +41,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'interact',
         description:
-          'Interacts deterministically with an element on the page using its integer ID (from get_agent_tree) or CSS selector.',
+          'Interacts deterministically with an element on the page using its integer ID (from get_agent_tree) or CSS selector. Supports click, type, hover, select, and scroll.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -55,12 +55,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             action: {
               type: 'string',
-              enum: ['click', 'type', 'select', 'hover'],
-              description: 'Action to perform on target element',
+              enum: ['click', 'type', 'select', 'hover', 'scroll'],
+              description: 'Action to perform on target element or viewport',
             },
             text: {
               type: 'string',
               description: 'Text string to input if action is type',
+            },
+            direction: {
+              type: 'string',
+              enum: ['up', 'down'],
+              description: 'Scroll direction if action is scroll (default: down)',
+            },
+            amount: {
+              type: 'number',
+              description: 'Scroll distance in pixels if action is scroll (default: 500)',
             },
           },
           required: ['action'],
@@ -68,7 +77,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'navigate',
-        description: 'Navigates the browser tab to a specified URL.',
+        description: 'Navigates the browser tab to a specified URL, or moves back/forward in history.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -76,8 +85,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               description: 'Target URL to navigate to (e.g. https://example.com)',
             },
+            history: {
+              type: 'string',
+              enum: ['back', 'forward'],
+              description: 'Move back or forward in history instead of navigating to URL',
+            },
           },
-          required: ['url'],
         },
       },
       {
@@ -96,7 +109,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'eval_js',
-        description: 'Executes a custom JavaScript code snippet in WebContent context (gated by security configuration).',
+        description:
+          'Executes a custom JavaScript code snippet in WebContent context (REQUIRES environment variable ENABLE_EVAL_JS=true).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -127,6 +141,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ['event'],
         },
       },
+      {
+        name: 'delete_session',
+        description: 'Closes the current Ladybird WebDriver HTTP session to release single-session locks.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
     ],
   };
 });
@@ -135,9 +157,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
+    if (name === 'delete_session') {
+      await client.closeSession();
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Successfully closed active Ladybird WebDriver session.',
+          },
+        ],
+      };
+    }
+
     if (name === 'navigate') {
-      const url = (args?.url as string) || 'about:blank';
-      await client.navigate(url);
+      const history = args?.history as string | undefined;
+      if (history === 'back') {
+        await client.goBack();
+      } else if (history === 'forward') {
+        await client.goForward();
+      } else {
+        const url = (args?.url as string) || 'about:blank';
+        await client.navigate(url);
+      }
+
       const currentUrl = await client.getCurrentUrl();
       return {
         content: [
@@ -168,6 +210,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const action = (args?.action as string) || 'click';
       const text = args?.text as string | undefined;
 
+      if (action === 'scroll') {
+        const direction = (args?.direction as 'up' | 'down') || 'down';
+        const amount = (args?.amount as number) || 500;
+        await client.scroll(direction, amount);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Successfully scrolled page ${direction} by ${amount}px`,
+            },
+          ],
+        };
+      }
+
       let targetSelector = selector;
       if (id !== undefined) {
         targetSelector = `[data-ladybird-agent-id="${id}"]`;
@@ -193,7 +249,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           [{ 'element-6066-11e4-a52e-4f735466cecf': elementId }]
         );
       } else {
-        throw new Error(`Action "${action}" is not yet supported.`);
+        throw new Error(`Action "${action}" is not supported.`);
       }
 
       return {
@@ -281,7 +337,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Ladybird MCP Server running on stdio');
+  console.error('Ladybird MCP Server 0.2.0 running on stdio');
 }
 
 main().catch((err) => {
