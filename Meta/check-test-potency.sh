@@ -114,11 +114,25 @@ restore_working_tree() {
     if [[ -n "${PATCH_FILE}" ]]; then
         echo "==> Reversing ${PATCH_FILE}"
         git apply -R "${PATCH_FILE}"
+        RESTORED_PATHS=($(git apply --numstat "${PATCH_FILE}" | awk '{print $3}'))
     else
         echo "==> Restoring ${REVERT_PATHS[*]} to HEAD"
         git checkout HEAD -- "${REVERT_PATHS[@]}"
         # The base revision may have carried files HEAD no longer has; checkout will not remove those.
         git clean -qfd -- "${REVERT_PATHS[@]}"
+        RESTORED_PATHS=("${REVERT_PATHS[@]}")
+    fi
+
+    # Rebuild, or the build directory is left holding binaries compiled from the bug. Everything then looks fine --
+    # clean tree, green CI, ninja reporting nothing to do -- while the app you run still misbehaves.
+    #
+    # Touch first. Restoring the source can land in the same second as the build that consumed it, and ninja compares
+    # mtimes: equal is not newer, so it would consider the stale objects current and skip the rebuild entirely.
+    echo "==> Rebuilding so the build directory matches the restored source"
+    touch "${RESTORED_PATHS[@]}" 2>/dev/null || true
+    if ! cmake --build "${BUILD_DIR}" > /tmp/potency-restore-build.log 2>&1; then
+        echo "error: the restore rebuild failed; ${BUILD_DIR} may hold binaries built from the bug." >&2
+        echo "       See /tmp/potency-restore-build.log" >&2
     fi
 }
 trap restore_working_tree EXIT
