@@ -242,8 +242,48 @@ Full suite: **259/259 passing in 46.8s** on an unloaded machine.
 - **NEW: the shared setup action pins Xcode 26.2.** Only the `macos-26` image carries it; the first CI run died on `macos-14`. Keep the plain label — `-large`/`-xlarge` are larger runners, billed even on public repos.
 - **NEW: there is no local vcpkg binary cache.** A second build tree (which coverage instrumentation requires) would rebuild every third-party dependency from source. This is the main obstacle to milestone #4 and should be budgeted for, or worked around with `-DVCPKG_INSTALLED_DIR` pointed at the existing tree.
 
+### Coverage: partially built, and honest about what it cannot yet measure
+
+`Meta/coverage.sh` exists and runs end-to-end. The vcpkg obstacle noted above turned out to be smaller than claimed: pointing the instrumented tree at the release tree's `vcpkg_installed` configures in **9 seconds** with no dependency rebuild.
+
+Three bugs surfaced only by running it, and all three failed in ways that looked like success:
+
+1. **`%p` nearly filled the disk.** One ~35MB profile per process, 19GB across 538 processes before the suite had worked through LibWeb. `%m` merges per image instead: 288 files, 213MB for the entire suite.
+2. **argv overflow.** Thousands of profile paths exceed `ARG_MAX`; it would have failed *after* the full instrumented build and test run. Fixed with `--input-files`.
+3. **A `test-*` glob matched `test-css-grammar-parser.py`,** and `llvm-cov` aborts the whole report on one unrecognised object. Stderr was being sent to `/dev/null`, so this produced an empty report that read as "no files matched the filter". The suppression is gone.
+
+**The measurement is only valid in-process.** Anything running in a helper — WebContent, therefore most of LibWeb — is missing, because `ProcessManager.cpp:151` kills helpers with SIGKILL and the profile runtime flushes from an `atexit` handler. Evidence: one passing web test that loads a page and computes styles reports **0.0%** of `CSS/StyleComputer.cpp`. So the tree-wide 27.97% and LibWeb's 7.4% are **invalid, not low**. Fixing it needs continuous profiling (`-fprofile-continuous`, `%c`) or graceful helper shutdown under coverage.
+
+Numbers that *are* trustworthy, since they come from in-process unit tests:
+
+| Area | Region coverage |
+| :--- | :--- |
+| `Libraries/LibWebView` | 46.7% across 88 files |
+| `Libraries/LibGfx` | 35.2% across 113 files |
+
+And one finding that holds regardless of method, because it comes from the link graph rather than counters: **only 2 of ~30 `UI/AppKit` files appear in the report at all** — `Clipboard.mm` and `Conversions.mm`, the two just wired into a test binary. The remaining ~10,000 lines are not 0%-covered; they are absent, because no test binary links them. That is the shape of the gap, stated precisely.
+
+### The backlog, ranked
+
+From the trustworthy half of the data. Ranked by missed regions rather than percentage, so effort goes where the untested surface actually is:
+
+| Missed regions | Covered | File |
+| ---: | ---: | :--- |
+| 1521 | 19.5% | `Libraries/LibWebView/Application.cpp` |
+| 1042 | 28.1% | `Libraries/LibWebView/ViewImplementation.cpp` |
+| 638 | 42.5% | `Libraries/LibWebView/WebContentClient.cpp` |
+| 477 | 52.3% | `Libraries/LibWebView/FileDownloader.cpp` |
+| 356 | 43.1% | `Libraries/LibWebView/CanonicalTraversable.cpp` |
+| 310 | 0.0% | `Libraries/LibWebView/CompositorConnection.cpp` |
+| 294 | 17.9% | `Libraries/LibWebView/DownloadPresentation.cpp` |
+| 205 | 0.0% | `Libraries/LibWebView/WebUI/SettingsUI.cpp` |
+
+Regenerate with `Meta/coverage.sh --filter 'Libraries/LibWebView'`.
+
+Worth noting where the top entry points. `LibWebView/Application.cpp` is the file holding the in-memory clipboard fake and four of the 29 divergence sites — the same file this whole proposal started from. The ranking found it without being told to look there, which is the argument for having the list at all.
+
 ### Where this leaves the initiative
 
-**1 of 29** `headless_mode` divergence sites closed. Still open: the contract-test harness, the coverage backlog generator (see the vcpkg caveat above), and wiring the potency script into CI so it runs on new tests automatically rather than on request.
+**1 of 29** `headless_mode` divergence sites closed. Still open: the contract-test harness, continuous-mode coverage so WebContent can be measured at all, and wiring the potency script into CI so it runs on new tests automatically rather than on request.
 
 *Signed by Claude Code*
