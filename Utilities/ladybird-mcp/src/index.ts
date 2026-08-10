@@ -3,6 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { LadybirdWebDriverClient } from './webdriver_client.js';
 import { INJECTED_AX_WALKER_SCRIPT, formatAXElementsToLineFormat, FormattedAXElement } from './ax_tree_formatter.js';
+import fs from 'fs';
+import path from 'path';
 
 const webDriverUrl = process.env.LADYBIRD_WEBDRIVER_URL || 'http://127.0.0.1:8000';
 const enableEvalJs = process.env.ENABLE_EVAL_JS === 'true';
@@ -12,7 +14,7 @@ const client = new LadybirdWebDriverClient(webDriverUrl);
 const server = new Server(
   {
     name: 'ladybird-mcp',
-    version: '0.3.0',
+    version: '0.4.0',
   },
   {
     capabilities: {
@@ -43,6 +45,47 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: 'tabs',
+        description: 'Manages browser tabs and windows (list, create, select, close).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['list', 'create', 'select', 'close'],
+              description: 'Tab management action',
+            },
+            url: {
+              type: 'string',
+              description: 'URL to navigate to when creating a new tab',
+            },
+            tabId: {
+              type: 'string',
+              description: 'Target tab/window handle ID for select or close',
+            },
+          },
+          required: ['action'],
+        },
+      },
+      {
+        name: 'set_viewport',
+        description: 'Sets the width and height of the Ladybird browser window/viewport.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            width: {
+              type: 'number',
+              description: 'Viewport width in pixels (e.g. 1280)',
+            },
+            height: {
+              type: 'number',
+              description: 'Viewport height in pixels (e.g. 800)',
+            },
+          },
+          required: ['width', 'height'],
+        },
+      },
+      {
         name: 'get_agent_tree',
         description:
           'Retrieves a token-optimized compact accessibility tree with integer IDs (e.g. [14] button "Submit" x=340 y=580). Use integer IDs with the interact tool.',
@@ -59,7 +102,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'interact',
         description:
-          'Interacts deterministically with an element on the page using its integer ID (from get_agent_tree) or CSS selector. Supports click, type, hover, select, and scroll.',
+          'Interacts deterministically with an element on the page using its integer ID (from get_agent_tree) or CSS selector. Supports click, type, hover, select, scroll, and press.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -73,12 +116,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             action: {
               type: 'string',
-              enum: ['click', 'type', 'select', 'hover', 'scroll'],
+              enum: ['click', 'type', 'select', 'hover', 'scroll', 'press'],
               description: 'Action to perform on target element or viewport',
             },
             text: {
               type: 'string',
               description: 'Text string to input if action is type',
+            },
+            key: {
+              type: 'string',
+              enum: ['Enter', 'Tab', 'Escape', 'ArrowDown', 'ArrowUp', 'Space'],
+              description: 'Key to press if action is press',
             },
             direction: {
               type: 'string',
@@ -118,7 +166,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'snapshot',
-        description: 'Captures a visual PNG screenshot or DOM snapshot of the current page.',
+        description:
+          'Captures a visual PNG screenshot or DOM snapshot of the current page. Pass filePath to save PNG directly to disk and avoid context token bloat.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -126,6 +175,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               enum: ['screenshot', 'dom'],
               description: 'Type of snapshot to retrieve (default: screenshot)',
+            },
+            filePath: {
+              type: 'string',
+              description: 'Optional absolute file path to save screenshot directly to disk (e.g. /tmp/page.png)',
             },
           },
         },
@@ -198,6 +251,86 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    if (name === 'tabs') {
+      const action = args?.action as string;
+      const url = args?.url as string | undefined;
+      const tabId = args?.tabId as string | undefined;
+
+      if (action === 'list') {
+        const handles = await client.getWindowHandles();
+        const current = await client.getWindowHandle();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Open Tab Handles (${handles.length}):\n${handles
+                .map((h) => (h === current ? `* ${h} (active)` : `- ${h}`))
+                .join('\n')}`,
+            },
+          ],
+        };
+      }
+
+      if (action === 'create') {
+        const newHandle = await client.createWindow('tab');
+        if (url) {
+          await client.switchToWindow(newHandle);
+          await client.navigate(url);
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Successfully created new tab (${newHandle})${url ? ` and navigated to ${url}` : ''}`,
+            },
+          ],
+        };
+      }
+
+      if (action === 'select') {
+        if (!tabId) throw new Error('tabId is required when action is "select"');
+        await client.switchToWindow(tabId);
+        const currentUrl = await client.getCurrentUrl();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Switched to tab (${tabId}). Current URL: ${currentUrl}`,
+            },
+          ],
+        };
+      }
+
+      if (action === 'close') {
+        if (tabId) {
+          await client.switchToWindow(tabId);
+        }
+        await client.closeWindow();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Closed active tab.',
+            },
+          ],
+        };
+      }
+    }
+
+    if (name === 'set_viewport') {
+      const width = (args?.width as number) || 1280;
+      const height = (args?.height as number) || 800;
+      await client.setWindowRect(width, height);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Successfully set Ladybird viewport to ${width}x${height}px`,
+          },
+        ],
+      };
+    }
+
     if (name === 'delete_session') {
       await client.closeSession();
       return {
@@ -252,6 +385,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const selector = args?.selector as string | undefined;
       const action = (args?.action as string) || 'click';
       const text = args?.text as string | undefined;
+      const key = args?.key as string | undefined;
 
       if (action === 'scroll') {
         const direction = (args?.direction as 'up' | 'down') || 'down';
@@ -262,6 +396,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `Successfully scrolled page ${direction} by ${amount}px`,
+            },
+          ],
+        };
+      }
+
+      if (action === 'press') {
+        if (!key) throw new Error('key parameter is required when action is "press"');
+        await client.pressKey(key);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Successfully pressed key "${key}"`,
             },
           ],
         };
@@ -307,8 +454,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === 'snapshot') {
       const kind = (args?.kind as string) || 'screenshot';
+      const filePath = args?.filePath as string | undefined;
+
       if (kind === 'screenshot') {
         const base64Png = await client.takeScreenshot();
+        if (filePath) {
+          const absPath = path.resolve(filePath);
+          const buf = Buffer.from(base64Png, 'base64');
+          fs.writeFileSync(absPath, buf);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Successfully saved viewport screenshot to file: ${absPath} (${buf.length} bytes)`,
+              },
+            ],
+          };
+        }
         return {
           content: [
             {
@@ -319,6 +481,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       } else {
         const html = await client.executeScript('return document.documentElement.outerHTML;');
+        if (filePath) {
+          const absPath = path.resolve(filePath);
+          fs.writeFileSync(absPath, String(html));
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Successfully saved DOM snapshot to file: ${absPath}`,
+              },
+            ],
+          };
+        }
         return {
           content: [
             {
@@ -380,7 +554,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Ladybird MCP Server 0.3.0 running on stdio');
+  console.error('Ladybird MCP Server 0.4.0 running on stdio');
 }
 
 main().catch((err) => {

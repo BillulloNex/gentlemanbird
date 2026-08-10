@@ -131,7 +131,6 @@ export class LadybirdWebDriverClient {
   }
 
   async ensureSession(headless: boolean = false): Promise<string> {
-    // 1. Check in-memory session ID first
     if (this.currentSessionId) {
       try {
         await this.request('GET', `/session/${this.currentSessionId}/url`);
@@ -141,7 +140,6 @@ export class LadybirdWebDriverClient {
       }
     }
 
-    // 2. Check persisted session ID in /tmp/ladybird-session.json
     const storedSessionId = this.loadSessionId();
     if (storedSessionId) {
       try {
@@ -156,12 +154,10 @@ export class LadybirdWebDriverClient {
       }
     }
 
-    // 3. Ensure service is running
     if (!(await this.isServiceRunning())) {
       await this.autoSpawnWebDriver(headless);
     }
 
-    // 4. Create new session only if no active session exists
     try {
       const res = await this.request('POST', '/session', {
         capabilities: {
@@ -202,6 +198,40 @@ export class LadybirdWebDriverClient {
     return res.value || res;
   }
 
+  async getWindowHandle(): Promise<string> {
+    const sessionId = await this.ensureSession();
+    const res = await this.request('GET', `/session/${sessionId}/window`);
+    return res.value || res;
+  }
+
+  async getWindowHandles(): Promise<string[]> {
+    const sessionId = await this.ensureSession();
+    const res = await this.request('GET', `/session/${sessionId}/window/handles`);
+    return res.value || res || [];
+  }
+
+  async createWindow(type: 'tab' | 'window' = 'tab'): Promise<string> {
+    const sessionId = await this.ensureSession();
+    const res = await this.request('POST', `/session/${sessionId}/window/new`, { type });
+    const val = res.value || res;
+    return val.handle || val;
+  }
+
+  async switchToWindow(handle: string): Promise<void> {
+    const sessionId = await this.ensureSession();
+    await this.request('POST', `/session/${sessionId}/window`, { handle });
+  }
+
+  async closeWindow(): Promise<void> {
+    const sessionId = await this.ensureSession();
+    await this.request('DELETE', `/session/${sessionId}/window`);
+  }
+
+  async setWindowRect(width: number, height: number): Promise<void> {
+    const sessionId = await this.ensureSession();
+    await this.request('POST', `/session/${sessionId}/window/rect`, { width, height });
+  }
+
   async takeScreenshot(): Promise<string> {
     const sessionId = await this.ensureSession();
     const res = await this.request('GET', `/session/${sessionId}/screenshot`);
@@ -239,6 +269,21 @@ export class LadybirdWebDriverClient {
       text,
       value: text.split(''),
     });
+  }
+
+  async pressKey(key: string): Promise<void> {
+    const keyMap: Record<string, string> = {
+      Enter: '\uE007',
+      Tab: '\uE004',
+      Escape: '\uE00C',
+      ArrowDown: '\uE015',
+      ArrowUp: '\uE013',
+      Space: ' ',
+    };
+    const keyVal = keyMap[key] || key;
+    await this.executeScript(
+      `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true }));`
+    );
   }
 
   async scroll(direction: 'up' | 'down' = 'down', amount: number = 500): Promise<void> {
