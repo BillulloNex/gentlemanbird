@@ -30,6 +30,16 @@ public:
 
     virtual ErrorOr<LexicalPath> default_path_for_downloaded_file(ByteString const&) const override { return Error::from_errno(ECANCELED); }
 
+#if defined(AK_OS_MACOS)
+    // Implemented in ClipboardMacOS.mm. These route the test runner at a real (but private) NSPasteboard instead of
+    // the in-memory clipboard in WebView::Application, so that clipboard tests cover the real pasteboard code.
+    virtual bool supports_clipboard_type(ClipboardType) const override;
+    virtual Utf16String clipboard_text(ClipboardType) const override;
+    virtual void set_clipboard_text(String, ClipboardType) override;
+    virtual Vector<Web::Clipboard::SystemClipboardRepresentation> clipboard_entries() const override;
+    virtual void insert_clipboard_item(Web::Clipboard::SystemClipboardItem) override;
+#endif
+
     ErrorOr<void> launch_test_fixtures();
 
     static constexpr u8 VERBOSITY_LEVEL_LOG_TEST_OUTPUT = 1;

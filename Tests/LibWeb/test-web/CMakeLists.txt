@@ -18,6 +18,18 @@ target_link_libraries(test-web PRIVATE AK LibCore LibDiff LibFileSystem LibGfx L
 
 if (APPLE)
     target_compile_definitions(test-web PRIVATE LADYBIRD_BINARY_PATH="$<TARGET_FILE_DIR:ladybird>")
+
+    # Drive the real NSPasteboard code from the test runner rather than the in-memory clipboard fallback. We compile
+    # the clipboard translation unit directly instead of linking ladybird_impl, which would drag in Metal, QuartzCore
+    # and the rest of the UI for three functions.
+    target_sources(test-web PRIVATE
+        ClipboardMacOS.mm
+        "${LADYBIRD_SOURCE_DIR}/UI/AppKit/Application/Clipboard.mm"
+        "${LADYBIRD_SOURCE_DIR}/UI/AppKit/Utilities/Conversions.mm"
+    )
+    target_include_directories(test-web PRIVATE "${LADYBIRD_SOURCE_DIR}/UI/AppKit")
+    target_compile_options(test-web PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fobjc-arc>)
+    target_link_libraries(test-web PRIVATE "-framework Cocoa")
 elseif (WIN32)
     target_link_libraries(test-web PRIVATE LibDevTools)
     target_include_directories(test-web PRIVATE $<BUILD_INTERFACE:${PTHREAD_INCLUDE_DIR}>)
