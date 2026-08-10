@@ -657,7 +657,7 @@ void Omnibox::commit_suggestion(size_t suggestion_index, bool should_record_enga
 {
     auto suggestion = m_suggestions[suggestion_index];
     if (should_record_engagement) {
-        m_provider->record_engagement({
+        hold_engagement({
             .input = m_retained_engagement_input.value_or(m_query),
             .destination_kind = suggestion.source == AutocompleteSuggestionSource::Search
                 ? OmniboxDestinationKind::Search
@@ -681,13 +681,36 @@ void Omnibox::commit_suggestion_text(String text)
 
 void Omnibox::commit_verbatim(String text)
 {
-    m_provider->record_engagement({
+    hold_engagement({
         .input = m_retained_engagement_input.value_or(text),
         .destination_kind = location_looks_like_url(text) ? OmniboxDestinationKind::URL : OmniboxDestinationKind::Search,
         .destination = text,
         .was_explicit = false,
     });
     commit(move(text));
+}
+
+void Omnibox::hold_engagement(OmniboxEngagement engagement)
+{
+    // A commit always supersedes any earlier one still waiting on its navigation: the user has moved on, and
+    // the abandoned navigation's outcome no longer says anything about what they wanted.
+    m_pending_engagement = move(engagement);
+}
+
+void Omnibox::committed_navigation_finished(URL::URL const& final_url)
+{
+    if (!m_pending_engagement.has_value())
+        return;
+
+    auto engagement = m_pending_engagement.release_value();
+
+    // A navigation that fails is served the error page as a real document, under this URL. Everything else
+    // -- including a 404 or any other error the site itself chose to render -- reached the destination and
+    // is worth learning, exactly as it would be if the user had reached it any other way.
+    if (final_url == URL::about_error())
+        return;
+
+    m_provider->record_engagement(move(engagement));
 }
 
 void Omnibox::adopt_display_text_as_query()

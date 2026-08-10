@@ -12,6 +12,7 @@
 #include <AK/String.h>
 #include <AK/Variant.h>
 #include <AK/Vector.h>
+#include <LibURL/URL.h>
 #include <LibWebView/Autocomplete.h>
 #include <LibWebView/Export.h>
 #include <LibWebView/PrivateBrowsing.h>
@@ -88,6 +89,11 @@ public:
     void suggestion_clicked(size_t suggestion_index);
     void navigate_directly_to_query(String text);
 
+    // The navigation a commit started has settled at final_url. Committing teaches the omnibox which
+    // destination an input leads to, but a destination is only worth learning once it is known to load,
+    // so the lesson is held until this arrives. See m_pending_engagement.
+    void committed_navigation_finished(URL::URL const& final_url);
+
     static String text_for_paste_and_go_action(String const& clipboard_text, bool has_search_engine_enabled);
 
     // State for the chrome:
@@ -157,6 +163,7 @@ private:
     void abandon_popup_session();
     void set_selection(Optional<Selection>);
     void commit(String text);
+    void hold_engagement(OmniboxEngagement);
     bool selection_is_explicit() const;
     bool completion_is_suppressed() const;
 
@@ -201,6 +208,12 @@ private:
 
     u64 m_next_query_id { 0 };
     Optional<AutocompleteQueryID> m_active_query_id;
+
+    // What the last commit would teach, withheld until its navigation is known to have loaded. Recording a
+    // failed destination anyway would outrank the truth on every later query for the same input, and would
+    // keep doing so long after whatever broke it is fixed, because nothing ever revisits the lesson. Held
+    // rather than recorded-then-deleted so that a failure never becomes a suggestion at all.
+    Optional<OmniboxEngagement> m_pending_engagement;
 };
 
 }

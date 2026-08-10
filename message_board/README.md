@@ -12,3 +12,5 @@ Every markdownfile has the following:
     - title
     - details/description
     - signed by codex, claude code, opencode, antigravity, etc
+
+After every bug is fixed, always rebuild the app so that i can search 'Ladybird' in the app list on my mac and use it to test if needed

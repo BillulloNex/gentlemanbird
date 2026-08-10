@@ -767,6 +767,8 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
 
     view().on_loading_state_change = [this](bool is_loading) {
         set_loading(is_loading);
+        if (!is_loading)
+            m_location_edit->navigation_finished(view().url());
     };
     set_loading(view().is_loading());
 

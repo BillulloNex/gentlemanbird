@@ -238,7 +238,7 @@ TEST_CASE(location_to_search_or_url)
     expect_url_equals_sanitized_url("https://example.test/path"sv, "example.test/path"sv); // Reserved TLDs.
     expect_url_equals_sanitized_url("https://example.example/path"sv, "example.example/path"sv);
     expect_url_equals_sanitized_url("https://example.invalid/path"sv, "example.invalid/path"sv);
-    expect_url_equals_sanitized_url("https://example.localhost/path"sv, "example.localhost/path"sv);
+    expect_url_equals_sanitized_url("http://example.localhost/path"sv, "example.localhost/path"sv); // .localhost is loopback.
 
     expect_search_url_equals_sanitized_url("example.def"sv); // Invalid domain but no scheme: search (Like Firefox or Chrome).
 
@@ -246,11 +246,48 @@ TEST_CASE(location_to_search_or_url)
     // Respect the user if the url has a valid scheme but not a public suffix (.def is not a recognized TLD).
     expect_url_equals_sanitized_url("https://example.def/"sv, "https://example.def"sv);
 
-    expect_url_equals_sanitized_url("https://localhost/"sv, "localhost"sv); // Respect localhost.
-    expect_url_equals_sanitized_url("https://localhost:8000/"sv, "localhost:8000"sv);
-    expect_url_equals_sanitized_url("https://localhost/hello"sv, "localhost/hello"sv);
-    expect_url_equals_sanitized_url("https://localhost/hello.world"sv, "localhost/hello.world"sv);
-    expect_url_equals_sanitized_url("https://localhost/hello.world?query=123"sv, "localhost/hello.world?query=123"sv);
+    // Respect localhost, and guess "http" for it: loopback development servers speak plain HTTP.
+    expect_url_equals_sanitized_url("http://localhost/"sv, "localhost"sv);
+    expect_url_equals_sanitized_url("http://localhost:8000/"sv, "localhost:8000"sv);
+    expect_url_equals_sanitized_url("http://localhost:3000/"sv, "localhost:3000"sv);
+    expect_url_equals_sanitized_url("http://localhost/hello"sv, "localhost/hello"sv);
+    expect_url_equals_sanitized_url("http://localhost/hello.world"sv, "localhost/hello.world"sv);
+    expect_url_equals_sanitized_url("http://localhost/hello.world?query=123"sv, "localhost/hello.world?query=123"sv);
+
+    // An explicit :443 must survive the guess rather than being elided as the https default port.
+    expect_url_equals_sanitized_url("http://localhost:443/"sv, "localhost:443"sv);
+
+    // The other loopback hosts of the secure contexts spec.
+    expect_url_equals_sanitized_url("http://127.0.0.1:3000/"sv, "127.0.0.1:3000"sv);
+    expect_url_equals_sanitized_url("http://127.1.2.3/"sv, "127.1.2.3"sv);
+    expect_url_equals_sanitized_url("http://[::1]:3000/"sv, "[::1]:3000"sv);
+    expect_url_equals_sanitized_url("http://dev.localhost/"sv, "dev.localhost"sv);
+
+    // Non-loopback hosts keep the "https" guess.
+    expect_url_equals_sanitized_url("https://192.168.1.1/"sv, "192.168.1.1"sv);
+    expect_url_equals_sanitized_url("https://notlocalhost/"sv, "https://notlocalhost"sv);
+
+    // An explicit scheme is always respected, loopback or not.
+    expect_url_equals_sanitized_url("https://localhost:3000/"sv, "https://localhost:3000"sv);
+    expect_url_equals_sanitized_url("http://example.org/"sv, "http://example.org"sv);
+
+    // A scheme-less "host:port" parses as the scheme "host" with the opaque path "port", because a scheme may
+    // contain dots. It must still be recognized as a host and a port rather than sent to the search engine.
+    expect_url_equals_sanitized_url("https://example.org:8080/"sv, "example.org:8080"sv);
+    expect_url_equals_sanitized_url("https://example.org:8080/path?query=123"sv, "example.org:8080/path?query=123"sv);
+    expect_url_equals_sanitized_url("https://example.org:8080/?query=123"sv, "example.org:8080?query=123"sv);
+    expect_url_equals_sanitized_url("https://example.org:8080/#hello"sv, "example.org:8080#hello"sv);
+    expect_url_equals_sanitized_url("https://example.org/"sv, "example.org:"sv); // A trailing colon is forgiven.
+    expect_url_equals_sanitized_url("http://dev.localhost:3000/"sv, "dev.localhost:3000"sv); // Loopback stays http.
+    expect_url_equals_sanitized_url("http://sub.dev.localhost:3000/path"sv, "sub.dev.localhost:3000/path"sv);
+
+    // Only a path that is entirely a port number counts, so real unsupported schemes still reach the search
+    // engine rather than being mangled into a host.
+    expect_search_url_equals_sanitized_url("example.org:80800"sv);  // Out of range for a port.
+    expect_search_url_equals_sanitized_url("example.org:8080a"sv);  // Not a port at all.
+    expect_search_url_equals_sanitized_url("example.org:80:80"sv);  // Neither is this.
+    expect_search_url_equals_sanitized_url("localhost:hello"sv);    // Nor this.
+    expect_search_url_equals_sanitized_url("ftp://example.org:21"sv); // "//" means the scheme parsed its own host.
 
     expect_url_equals_sanitized_url("https://example.com/"sv, "example"sv, WebView::AppendTLD::Yes); // User holds down the Ctrl key.
     expect_url_equals_sanitized_url("https://example.def.com/"sv, "example.def"sv, WebView::AppendTLD::Yes);
@@ -282,7 +319,7 @@ TEST_CASE(context_menu_url_text)
 {
     expect_context_menu_text_url("ladybird.org"sv, "https://ladybird.org/"sv);
     expect_context_menu_text_url("www.ladybird.org/path?x=1"sv, "https://www.ladybird.org/path?x=1"sv);
-    expect_context_menu_text_url("localhost:8000"sv, "https://localhost:8000/"sv);
+    expect_context_menu_text_url("localhost:8000"sv, "http://localhost:8000/"sv);
     expect_context_menu_text_url("https://ladybird.org"sv, "https://ladybird.org/"sv);
 
     expect_context_menu_text_not_url("ladybird"sv);

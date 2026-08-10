@@ -43,6 +43,7 @@ public:
     bool url_is_hidden() const { return m_url_is_hidden; }
     void set_url_is_hidden(bool);
     void show_autocomplete();
+    void navigation_finished(URL::URL const& final_url) { m_omnibox.committed_navigation_finished(final_url); }
 
 signals:
     void focus_return_requested();

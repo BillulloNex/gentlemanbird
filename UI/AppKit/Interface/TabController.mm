@@ -864,6 +864,7 @@ private:
 - (void)onLoadFinish
 {
     [[self locationSearchField] setLoading:NO];
+    m_omnibox->committed_navigation_finished([[[self tab] web_view] view].url());
 }
 
 - (void)onFaviconChange:(NSImage*)favicon

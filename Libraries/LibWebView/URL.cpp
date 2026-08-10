@@ -7,6 +7,8 @@
  */
 
 #include <AK/CharacterTypes.h>
+#include <AK/IPv4Address.h>
+#include <AK/IPv6Address.h>
 #include <AK/String.h>
 #include <AK/StringBuilder.h>
 #include <LibFileSystem/FileSystem.h>
@@ -17,6 +19,57 @@
 #include <LibWebView/URL.h>
 
 namespace WebView {
+
+// FIXME: Add support for other schemes, e.g. "mailto:". Firefox and Chrome open mailto: locations.
+static constexpr Array SUPPORTED_SCHEMES { "about"sv, "data"sv, "file"sv, "http"sv, "https"sv, "resource"sv };
+
+static bool scheme_is_supported(URL::URL const& url)
+{
+    return any_of(SUPPORTED_SCHEMES, [&](StringView const& scheme) { return scheme == url.scheme(); });
+}
+
+// A scheme may contain dots, so a scheme-less "host:port" location parses as a URL whose scheme is the host:
+// "example.com:8080" becomes the scheme "example.com" with the opaque path "8080". Nothing is ever navigable
+// there, so recognize that shape and let the caller re-parse the location as a host and a port instead.
+//
+// Only a path that is entirely a port number counts, which is what separates "example.com:8080" from a real
+// unsupported scheme like "mailto:hello@example.com". An empty path is accepted so that a trailing colon is
+// forgiven, and a "//" in the location is not, since that means the scheme already parsed a host of its own.
+static bool looks_like_host_and_port(URL::URL const& url)
+{
+    if (scheme_is_supported(url) || !url.has_an_opaque_path())
+        return false;
+
+    auto path = url.serialize_path();
+    auto path_view = path.bytes_as_string_view();
+
+    size_t port_length = 0;
+    while (port_length < path_view.length() && is_ascii_digit(path_view[port_length]))
+        ++port_length;
+
+    // The port must be followed by nothing at all or by the start of a path.
+    if (port_length < path_view.length() && path_view[port_length] != '/')
+        return false;
+    if (port_length == 0)
+        return path_view.is_empty();
+
+    return path_view.substring_view(0, port_length).to_number<u16>().has_value();
+}
+
+// The loopback hosts of https://w3c.github.io/webappsec-secure-contexts/#is-origin-trustworthy, which are
+// potentially trustworthy no matter the scheme because their traffic never leaves the machine.
+static bool host_is_loopback(URL::Host const& host)
+{
+    if (host.has<IPv4Address>())
+        return (host.get<IPv4Address>().to_u32() & 0xff000000) == 0x7f000000;
+    if (host.has<IPv6Address>())
+        return host.get<IPv6Address>() == IPv6Address::loopback();
+
+    auto const& domain = host.get<String>();
+    return domain.is_one_of("localhost"sv, "localhost."sv)
+        || domain.ends_with_bytes(".localhost"sv)
+        || domain.ends_with_bytes(".localhost."sv);
+}
 
 Optional<URL::URL> sanitize_url(StringView location, Optional<SearchEngine> const& search_engine, AppendTLD append_tld)
 {
@@ -36,21 +89,32 @@ Optional<URL::URL> sanitize_url(StringView location, Optional<SearchEngine> cons
         return search_url_or_error();
     }
 
-    bool https_scheme_was_guessed = false;
+    bool scheme_was_guessed = false;
 
     auto url = URL::create_with_url_or_path(location);
 
-    if (!url.has_value() || url->scheme() == "localhost"sv) {
+    if (!url.has_value() || looks_like_host_and_port(*url)) {
         url = URL::create_with_url_or_path(ByteString::formatted("https://{}", location));
         if (!url.has_value())
             return search_url_or_error();
 
-        https_scheme_was_guessed = true;
+        scheme_was_guessed = true;
+
+        // Development servers on a loopback host overwhelmingly speak plain HTTP, and upgrading them costs
+        // the user an SSL handshake failure rather than the page they asked for. Guess "http" for those, as
+        // Chrome's HTTPS-Upgrades and Firefox's HTTPS-Only mode both exempt loopback for the same reason. The
+        // location is re-parsed rather than having its scheme swapped so that an explicit :443 is preserved.
+        // With AppendTLD::Yes the host is about to be rewritten into a public domain, so it stays "https".
+        if (append_tld == AppendTLD::No) {
+            if (auto const& host = url->host(); host.has_value() && host_is_loopback(*host)) {
+                url = URL::create_with_url_or_path(ByteString::formatted("http://{}", location));
+                if (!url.has_value())
+                    return search_url_or_error();
+            }
+        }
     }
 
-    // FIXME: Add support for other schemes, e.g. "mailto:". Firefox and Chrome open mailto: locations.
-    static constexpr Array SUPPORTED_SCHEMES { "about"sv, "data"sv, "file"sv, "http"sv, "https"sv, "resource"sv };
-    if (!any_of(SUPPORTED_SCHEMES, [&](StringView const& scheme) { return scheme == url->scheme(); }))
+    if (!scheme_is_supported(*url))
         return search_url_or_error();
 
     if (auto const& host = url->host(); host.has_value() && host->is_domain()) {
@@ -68,7 +132,7 @@ Optional<URL::URL> sanitize_url(StringView location, Optional<SearchEngine> cons
         if (!public_suffix.has_value() || *public_suffix == domain) {
             if (append_tld == AppendTLD::Yes)
                 url->set_host(MUST(String::formatted("{}.com", domain)));
-            else if (https_scheme_was_guessed && domain != "localhost"sv)
+            else if (scheme_was_guessed && domain != "localhost"sv)
                 return search_url_or_error();
         }
     }

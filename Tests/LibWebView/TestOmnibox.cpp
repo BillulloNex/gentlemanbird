@@ -5,6 +5,7 @@
  */
 
 #include <LibTest/TestCase.h>
+#include <LibURL/Parser.h>
 #include <LibWebView/Omnibox.h>
 #include <LibWebView/WebUI.h>
 
@@ -177,6 +178,18 @@ struct Harness {
         if (selection_start.has_value())
             return view.substring_view(0, *selection_start);
         return view;
+    }
+
+    // The chrome reports where a committed navigation came to rest. Engagements are only learned once one
+    // lands somewhere real, so a test that expects to have taught the omnibox something must land first.
+    void finish_navigation(StringView final_url = "https://example.com/"sv)
+    {
+        omnibox.committed_navigation_finished(URL::Parser::basic_parse(final_url).value());
+    }
+
+    void fail_navigation()
+    {
+        omnibox.committed_navigation_finished(URL::about_error());
     }
 
     ScriptedProvider* provider { nullptr };
@@ -478,6 +491,7 @@ TEST_CASE(explicit_selection_survives_same_generation_reordering)
 
     harness.omnibox.return_pressed();
     EXPECT_EQ(harness.commits.last(), "a"sv);
+    harness.finish_navigation();
     EXPECT(harness.provider->engagements.last().was_explicit);
 }
 
@@ -503,6 +517,7 @@ TEST_CASE(search_selection_survives_equivalent_text_normalization)
 
     harness.omnibox.return_pressed();
     EXPECT_EQ(harness.commits.last(), "Lady   Bird"sv);
+    harness.finish_navigation();
     EXPECT(harness.provider->engagements.last().was_explicit);
 }
 
@@ -583,6 +598,7 @@ TEST_CASE(automatic_default_records_the_typed_input)
     harness.press_key('t');
     harness.provider->deliver({ history_row("https://www.thev.example/"sv), search_row("t"sv) });
     harness.omnibox.return_pressed();
+    harness.finish_navigation();
 
     EXPECT_EQ(harness.provider->engagements.size(), 1u);
     EXPECT_EQ(harness.provider->engagements[0].input, "t"sv);
@@ -600,6 +616,7 @@ TEST_CASE(keyboard_choice_records_explicit_engagement)
     harness.provider->deliver({ history_row("https://www.thev.example/"sv), search_row("t"sv) });
     EXPECT(harness.omnibox.select_next_suggestion());
     harness.omnibox.return_pressed();
+    harness.finish_navigation();
 
     EXPECT_EQ(harness.provider->engagements.size(), 1u);
     EXPECT_EQ(harness.provider->engagements[0].input, "t"sv);
@@ -614,12 +631,85 @@ TEST_CASE(verbatim_commit_records_the_unmodified_input)
     harness.begin_editing("ladybird browser"sv);
 
     harness.omnibox.return_pressed();
+    harness.finish_navigation();
 
     EXPECT_EQ(harness.provider->engagements.size(), 1u);
     EXPECT_EQ(harness.provider->engagements[0].input, "ladybird browser"sv);
     EXPECT_EQ(harness.provider->engagements[0].destination_kind, WebView::OmniboxDestinationKind::Search);
     EXPECT_EQ(harness.provider->engagements[0].destination, "ladybird browser"sv);
     EXPECT(!harness.provider->engagements[0].was_explicit);
+}
+
+TEST_CASE(a_failed_navigation_teaches_nothing)
+{
+    Harness harness;
+    harness.begin_editing("localhost:3000"sv);
+
+    harness.omnibox.return_pressed();
+    harness.fail_navigation();
+
+    // Learning a destination that could not load would put it at the top of the popup for this input
+    // forever after, which is exactly how a broken URL outlives the bug that produced it.
+    EXPECT(harness.provider->engagements.is_empty());
+}
+
+TEST_CASE(a_failed_navigation_is_not_learned_by_a_later_load)
+{
+    Harness harness;
+    harness.begin_editing("localhost:3000"sv);
+
+    harness.omnibox.return_pressed();
+    harness.fail_navigation();
+
+    // The next load to come along is somebody else's -- a link click, a redirect, another tab's commit
+    // replayed onto this model -- and must not be mistaken for the failed navigation succeeding late.
+    harness.finish_navigation();
+    EXPECT(harness.provider->engagements.is_empty());
+}
+
+TEST_CASE(only_the_last_commit_is_learned_when_navigations_are_superseded)
+{
+    Harness harness;
+
+    harness.begin_editing("first"sv);
+    harness.omnibox.return_pressed();
+
+    // The user gave up on that one and typed something else before it ever landed.
+    harness.begin_editing("second"sv);
+    harness.omnibox.return_pressed();
+    harness.finish_navigation();
+
+    EXPECT_EQ(harness.provider->engagements.size(), 1u);
+    EXPECT_EQ(harness.provider->engagements[0].destination, "second"sv);
+}
+
+TEST_CASE(an_error_page_a_site_serves_itself_is_still_learned)
+{
+    Harness harness;
+    harness.begin_editing("example.com/missing"sv);
+
+    harness.omnibox.return_pressed();
+
+    // A 404 is a page that loaded. Only the browser's own error document means the destination is unusable.
+    harness.finish_navigation("https://example.com/missing"sv);
+
+    EXPECT_EQ(harness.provider->engagements.size(), 1u);
+    EXPECT_EQ(harness.provider->engagements[0].destination, "example.com/missing"sv);
+}
+
+TEST_CASE(a_landed_navigation_is_only_learned_once)
+{
+    Harness harness;
+    harness.begin_editing("ladybird browser"sv);
+
+    harness.omnibox.return_pressed();
+    harness.finish_navigation();
+
+    // Every subsequent load in the tab reports in; none of them re-teach the committed lesson.
+    harness.finish_navigation();
+    harness.finish_navigation();
+
+    EXPECT_EQ(harness.provider->engagements.size(), 1u);
 }
 
 TEST_CASE(a_user_chosen_row_wins_over_edited_text)
@@ -669,6 +759,7 @@ TEST_CASE(a_web_ui_suggestion_completes_and_commits_as_a_url)
 
     harness.omnibox.return_pressed();
     EXPECT_EQ(harness.commits.last(), "about:settings"sv);
+    harness.finish_navigation("about:settings"sv);
     EXPECT_EQ(harness.provider->engagements.last().destination_kind, WebView::OmniboxDestinationKind::URL);
 }
 
@@ -1075,6 +1166,7 @@ TEST_CASE(accepting_a_completion_requeries_without_losing_the_learning_prefix)
 
     harness.provider->deliver({ history_row("https://github.com/LadybirdBrowser/ladybird"sv) });
     harness.omnibox.return_pressed();
+    harness.finish_navigation("https://github.com/LadybirdBrowser/ladybird"sv);
     EXPECT_EQ(harness.provider->engagements.size(), 1u);
     EXPECT_EQ(harness.provider->engagements[0].input, "gi"sv);
     EXPECT_EQ(harness.provider->engagements[0].destination, "https://github.com/LadybirdBrowser/ladybird"sv);
@@ -1092,6 +1184,7 @@ TEST_CASE(direct_navigation_does_not_retain_previous_engagement_input)
     EXPECT(harness.omnibox.accept_completion());
 
     harness.omnibox.navigate_directly_to_query("https://example.com/"_string);
+    harness.finish_navigation();
 
     EXPECT_EQ(harness.provider->engagements.size(), 1u);
     EXPECT_EQ(harness.provider->engagements[0].input, "https://example.com/"sv);
