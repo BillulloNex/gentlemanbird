@@ -53,6 +53,12 @@ if (BUILD_TESTING AND NOT WIN32)
     # The timeout is a ceiling rather than a wait, so raising it costs nothing on fast hardware.
     set_tests_properties(TestWebDriverSessionHistory PROPERTIES TIMEOUT 300)
 
+    add_test(
+        NAME TestWebDriverNavigatorWebdriver
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test-webdriver-navigator-webdriver.py $<TARGET_FILE:WebDriver>
+    )
+    set_tests_properties(TestWebDriverNavigatorWebdriver PROPERTIES TIMEOUT 120)
+
     add_test(NAME TestAutocomplete COMMAND $<TARGET_FILE:TestAutocomplete>)
     set_tests_properties(TestAutocomplete PROPERTIES TIMEOUT 60 ENVIRONMENT LADYBIRD_SOURCE_DIR=${LADYBIRD_SOURCE_DIR})
 

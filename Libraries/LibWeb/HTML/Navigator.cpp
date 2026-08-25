@@ -66,7 +66,12 @@ bool Navigator::webdriver() const
     // Returns true if webdriver-active flag is set, false otherwise.
 
     // NOTE: The NavigatorAutomationInformation interface should not be exposed on WorkerNavigator.
-    return m_window->page().is_webdriver_active();
+
+    // NOTE: When the webdriver-hidden flag is set (via the ladybird:hideWebdriver capability), the
+    //       webdriver-active flag is not advertised to page content, so navigator.webdriver reports
+    //       false even while the session is being driven. The transport remains fully active.
+    auto& page = m_window->page();
+    return page.is_webdriver_active() && !page.is_webdriver_hidden();
 }
 
 void Navigator::visit_edges(GC::Cell::Visitor& visitor)
