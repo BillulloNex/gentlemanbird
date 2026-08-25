@@ -125,6 +125,12 @@ ErrorOr<NonnullRefPtr<Session>> Session::create(NonnullRefPtr<Client> client, Js
     // 14. Set the webdriver-active flag to true.
     session->web_content_connection().async_set_is_webdriver_active(true);
 
+    // Ladybird extension: when ladybird:hideWebdriver is requested, keep the transport active but do
+    // not advertise it to page content (navigator.webdriver reports false). Sent before any navigation
+    // so the first document already observes the intended value.
+    if (session->webdriver_hidden())
+        session->web_content_connection().async_set_is_webdriver_hidden(true);
+
     return session;
 }
 
@@ -285,6 +291,12 @@ ErrorOr<void> Session::accept_web_content_transport(NonnullOwnPtr<IPC::Transport
         pending_connection->async_set_user_prompt_handler(Web::WebDriver::user_prompt_handler());
         if (m_timeouts_configuration.has_value())
             pending_connection->async_set_timeouts(*m_timeouts_configuration);
+
+        // Re-apply the hidden flag to windows opened or swapped into a new WebContent process, so
+        // navigator.webdriver stays consistent across cross-process navigations, matching the other
+        // session-level settings above.
+        if (webdriver_hidden())
+            pending_connection->async_set_is_webdriver_hidden(true);
 
         if (auto window = m_windows.find(window_handle); window != m_windows.end()) {
             window->value.web_content_connection = move(pending_connection);

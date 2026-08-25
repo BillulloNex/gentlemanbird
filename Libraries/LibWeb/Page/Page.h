@@ -189,6 +189,11 @@ public:
     bool is_webdriver_active() const { return m_is_webdriver_active; }
     void set_is_webdriver_active(bool b) { m_is_webdriver_active = b; }
 
+    // When set, the webdriver-active flag is not advertised to page content via navigator.webdriver.
+    // This decouples "automation transport is active" from "advertise automation to the page".
+    bool is_webdriver_hidden() const { return m_is_webdriver_hidden; }
+    void set_is_webdriver_hidden(bool b) { m_is_webdriver_hidden = b; }
+
     bool is_hovering_link() const { return m_is_hovering_link; }
     void set_is_hovering_link(bool b) { m_is_hovering_link = b; }
 
@@ -375,6 +380,7 @@ private:
     // https://w3c.github.io/webdriver/#dfn-webdriver-active-flag
     // The webdriver-active flag is set to true when the user agent is under remote control. It is initially false.
     bool m_is_webdriver_active { false };
+    bool m_is_webdriver_hidden { false };
 
     bool m_is_hovering_link { false };
     bool m_is_in_tooltip_area { false };

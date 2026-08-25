@@ -359,6 +359,11 @@ void WebDriverConnection::set_is_webdriver_active(bool is_webdriver_active)
     current_browsing_context().page().set_is_webdriver_active(is_webdriver_active);
 }
 
+void WebDriverConnection::set_is_webdriver_hidden(bool is_webdriver_hidden)
+{
+    current_browsing_context().page().set_is_webdriver_hidden(is_webdriver_hidden);
+}
+
 // 9.1 Get Timeouts, https://w3c.github.io/webdriver/#dfn-get-timeouts
 Messages::WebDriverClient::GetTimeoutsResponse WebDriverConnection::get_timeouts()
 {
