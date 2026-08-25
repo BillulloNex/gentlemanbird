@@ -203,8 +203,8 @@ static void define_chrome_property(JS::Realm& realm, HTML::Window& window, JS::O
     chrome->define_direct_property("app"_utf16_fly_string, create_chrome_app_object(realm), JS::default_attributes);
     chrome->define_direct_property("runtime"_utf16_fly_string, JS::Object::create(realm, realm.intrinsics().object_prototype()), JS::default_attributes);
 
-    // Chromium exposes chrome as an enumerable, writable, non-configurable own property of Window.
-    global_object.define_direct_property("chrome"_utf16_fly_string, chrome, JS::Attribute::Writable | JS::Attribute::Enumerable);
+    // Chromium exposes chrome as a writable, enumerable, configurable own property of Window.
+    global_object.define_direct_property("chrome"_utf16_fly_string, chrome, JS::Attribute::Writable | JS::Attribute::Enumerable | JS::Attribute::Configurable);
 }
 
 WebIDL::ExceptionOr<void> initialize_window_web_interfaces(HTML::Window& window)

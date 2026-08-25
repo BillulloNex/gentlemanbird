@@ -2,7 +2,7 @@ window.chrome is an object: true
 window.chrome has Object.prototype: true
 window.chrome is writable: true
 window.chrome is enumerable: true
-window.chrome is non-configurable: true
+window.chrome is configurable: true
 chrome keys: loadTimes,csi,app,runtime
 chrome.loadTimes is native: true
 chrome.csi is native: true

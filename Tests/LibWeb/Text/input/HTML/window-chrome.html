@@ -7,7 +7,7 @@
         println(`window.chrome has Object.prototype: ${Object.getPrototypeOf(window.chrome) === Object.prototype}`);
         println(`window.chrome is writable: ${chromeDescriptor.writable}`);
         println(`window.chrome is enumerable: ${chromeDescriptor.enumerable}`);
-        println(`window.chrome is non-configurable: ${!chromeDescriptor.configurable}`);
+        println(`window.chrome is configurable: ${chromeDescriptor.configurable}`);
 
         println(`chrome keys: ${Object.keys(window.chrome).join(",")}`);
         println(`chrome.loadTimes is native: ${Function.prototype.toString.call(chrome.loadTimes) === "function () { [native code] }"}`);
