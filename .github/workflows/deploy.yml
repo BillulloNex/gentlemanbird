@@ -6,7 +6,7 @@
 #
 # Prerequisites:
 #   1. Repository must be PUBLIC (for free GitHub Actions minutes)
-#   2. COOLIFY_WEBHOOK_URL secret must be set in repo settings
+#   2. COOLIFY_API_TOKEN and COOLIFY_API_URL secrets must be set in repo settings
 # =============================================================================
 
 name: Deploy GentlemanBird
