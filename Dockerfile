@@ -18,6 +18,10 @@ WORKDIR /src
 # Copy the entire source tree (filtered by .dockerignore)
 COPY . .
 
+# Bootstrap vcpkg (clones + builds vcpkg toolchain that cmake --preset expects)
+ENV VCPKG_ROOT=/src/Build/vcpkg
+RUN python3 Meta/ladybird.py vcpkg
+
 # Build Ladybird in Release mode with Qt UI disabled (headless only).
 # Limit parallel link jobs to avoid OOM on 16GB GitHub runners.
 RUN cmake --preset Release \
