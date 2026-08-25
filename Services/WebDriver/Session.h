@@ -66,6 +66,7 @@ public:
     Web::WebDriver::SessionFlags session_flags() const { return m_session_flags; }
     String const& current_window_handle() const { return m_current_window_handle; }
     bool test_hooks_enabled() const { return m_options.enable_test_hooks; }
+    bool webdriver_hidden() const { return m_options.hide_webdriver; }
 
     bool has_window_handle(StringView handle) const { return m_windows.contains(handle); }
 

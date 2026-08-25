@@ -49,6 +49,7 @@ struct WEB_API LadybirdOptions {
 
     bool headless { false };
     bool enable_test_hooks { false };
+    bool hide_webdriver { false };
 };
 
 WEB_API Response process_capabilities(JsonValue const& parameters, SessionFlags flags);
