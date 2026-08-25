@@ -5,7 +5,6 @@ const stackSetter = stackDescriptor.set;
 describe("getter - normal behavior", () => {
     test("basic functionality", () => {
         const stackFrames = [
-            /^    at .*Error$/,
             /^    at .+[\\/]Error[\\/]Error\.prototype\.stack\.js:\d+:\d+$/,
             /^    at test \(.+[\\/]test-common\.js:\d+:\d+\)$/,
             /^    at .+[\\/]Error[\\/]Error\.prototype\.stack\.js:6:9$/,
@@ -41,6 +40,15 @@ describe("getter - normal behavior", () => {
                 expect(!!stackFrame.match(expectedStackFrame)).toBeTrue();
             }
         }
+    });
+
+    test("source-backed functions named Error remain in the stack", () => {
+        function Error() {
+            return new globalThis.Error().stack;
+        }
+
+        const stackFrames = Error().trim().split("\n").slice(1);
+        expect(stackFrames.some(frame => /^    at Error \(.+Error\.prototype\.stack\.js:\d+:\d+\)$/.test(frame))).toBeTrue();
     });
 
     test("this value must be an object", () => {

@@ -53,8 +53,16 @@ void ErrorData::populate_stack(VM& vm)
     m_traceback.ensure_capacity(stack_trace.size());
     for (auto& element : stack_trace) {
         auto* context = element.execution_context;
+        auto function_name = context->function ? context->function->name_for_call_stack() : ""_utf16;
+
+        // V8 starts Error.stack at the JavaScript caller rather than exposing the native error
+        // constructor itself. Native constructor frames have no source location; retaining source-
+        // backed functions with the same name avoids hiding a user-defined function named Error.
+        if (m_traceback.is_empty() && !element.source_range.has_value() && function_name.ends_with("Error"_utf16))
+            continue;
+
         m_traceback.append({
-            .function_name = context->function ? context->function->name_for_call_stack() : ""_utf16,
+            .function_name = move(function_name),
             .cached_source_range = move(element.source_range),
         });
     }

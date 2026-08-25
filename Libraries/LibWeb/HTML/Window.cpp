@@ -18,6 +18,8 @@
 #include <LibJS/Runtime/FunctionObject.h>
 #include <LibJS/Runtime/GlobalEnvironment.h>
 #include <LibJS/Runtime/NativeFunction.h>
+#include <LibJS/Runtime/Object.h>
+#include <LibJS/Runtime/PrimitiveString.h>
 #include <LibJS/Runtime/Shape.h>
 #include <LibTextCodec/Decoder.h>
 #include <LibURL/Origin.h>
@@ -120,6 +122,91 @@ PlatformObject& platform_object_for_window(HTML::Window& window, JS::Realm& real
     return *Bindings::wrap(wrapper_world, realm, GC::Ref { window });
 }
 
+static GC::Ref<JS::Object> create_chrome_app_object(JS::Realm& realm)
+{
+    auto& vm = realm.vm();
+    auto app = JS::Object::create(realm, realm.intrinsics().object_prototype());
+    auto create_native_function = [&realm](Utf16FlyString const& name, Function<JS::ThrowCompletionOr<JS::Value>(JS::VM&)> callback) {
+        return JS::NativeFunction::create(realm, move(callback), 0, name, &realm);
+    };
+
+    app->define_direct_property("isInstalled"_utf16_fly_string, JS::Value(false), JS::default_attributes);
+    app->define_direct_property("getDetails"_utf16_fly_string, create_native_function("getDetails"_utf16_fly_string, [](JS::VM&) -> JS::ThrowCompletionOr<JS::Value> { return JS::js_null(); }), JS::default_attributes);
+    app->define_direct_property("getIsInstalled"_utf16_fly_string, create_native_function("getIsInstalled"_utf16_fly_string, [](JS::VM&) -> JS::ThrowCompletionOr<JS::Value> { return JS::Value(false); }), JS::default_attributes);
+    app->define_direct_property("installState"_utf16_fly_string, create_native_function("installState"_utf16_fly_string, [](JS::VM&) -> JS::ThrowCompletionOr<JS::Value> { return JS::js_undefined(); }), JS::default_attributes);
+    app->define_direct_property("runningState"_utf16_fly_string, create_native_function("runningState"_utf16_fly_string, [](JS::VM& vm) -> JS::ThrowCompletionOr<JS::Value> { return JS::PrimitiveString::create(vm, "cannot_run"_utf16_fly_string); }), JS::default_attributes);
+
+    auto install_state = JS::Object::create(realm, realm.intrinsics().object_prototype());
+    install_state->define_direct_property("DISABLED"_utf16_fly_string, JS::PrimitiveString::create(vm, "disabled"_utf16_fly_string), JS::default_attributes);
+    install_state->define_direct_property("INSTALLED"_utf16_fly_string, JS::PrimitiveString::create(vm, "installed"_utf16_fly_string), JS::default_attributes);
+    install_state->define_direct_property("NOT_INSTALLED"_utf16_fly_string, JS::PrimitiveString::create(vm, "not_installed"_utf16_fly_string), JS::default_attributes);
+    app->define_direct_property("InstallState"_utf16_fly_string, install_state, JS::default_attributes);
+
+    auto running_state = JS::Object::create(realm, realm.intrinsics().object_prototype());
+    running_state->define_direct_property("CANNOT_RUN"_utf16_fly_string, JS::PrimitiveString::create(vm, "cannot_run"_utf16_fly_string), JS::default_attributes);
+    running_state->define_direct_property("READY_TO_RUN"_utf16_fly_string, JS::PrimitiveString::create(vm, "ready_to_run"_utf16_fly_string), JS::default_attributes);
+    running_state->define_direct_property("RUNNING"_utf16_fly_string, JS::PrimitiveString::create(vm, "running"_utf16_fly_string), JS::default_attributes);
+    app->define_direct_property("RunningState"_utf16_fly_string, running_state, JS::default_attributes);
+
+    return app;
+}
+
+static GC::Ref<JS::Object> create_chrome_load_times_object(JS::Realm& realm, HTML::Window& window)
+{
+    auto& vm = realm.vm();
+    auto result = JS::Object::create(realm, realm.intrinsics().object_prototype());
+    auto const& load_timing = window.associated_document().load_timing_info();
+    auto time_origin = HighResolutionTime::get_time_origin_timestamp(realm.global_object());
+
+    auto absolute_time_in_seconds = [time_origin](HighResolutionTime::DOMHighResTimeStamp relative_time) {
+        if (relative_time == 0)
+            return 0.0;
+        return (time_origin + relative_time) / 1000.0;
+    };
+
+    auto request_time = time_origin / 1000.0;
+    result->define_direct_property("requestTime"_utf16_fly_string, JS::Value(request_time), JS::default_attributes);
+    result->define_direct_property("startLoadTime"_utf16_fly_string, JS::Value(request_time), JS::default_attributes);
+    result->define_direct_property("commitLoadTime"_utf16_fly_string, JS::Value(request_time), JS::default_attributes);
+    result->define_direct_property("finishDocumentLoadTime"_utf16_fly_string, JS::Value(absolute_time_in_seconds(load_timing.dom_content_loaded_event_end_time)), JS::default_attributes);
+    result->define_direct_property("finishLoadTime"_utf16_fly_string, JS::Value(absolute_time_in_seconds(load_timing.load_event_end_time)), JS::default_attributes);
+    result->define_direct_property("firstPaintTime"_utf16_fly_string, JS::Value(0), JS::default_attributes);
+    result->define_direct_property("firstPaintAfterLoadTime"_utf16_fly_string, JS::Value(0), JS::default_attributes);
+    result->define_direct_property("navigationType"_utf16_fly_string, JS::PrimitiveString::create(vm, "Other"_utf16_fly_string), JS::default_attributes);
+    result->define_direct_property("wasFetchedViaSpdy"_utf16_fly_string, JS::Value(false), JS::default_attributes);
+    result->define_direct_property("wasNpnNegotiated"_utf16_fly_string, JS::Value(false), JS::default_attributes);
+    result->define_direct_property("npnNegotiatedProtocol"_utf16_fly_string, JS::PrimitiveString::create(vm, Utf16String {}), JS::default_attributes);
+    result->define_direct_property("wasAlternateProtocolAvailable"_utf16_fly_string, JS::Value(false), JS::default_attributes);
+    result->define_direct_property("connectionInfo"_utf16_fly_string, JS::PrimitiveString::create(vm, "unknown"_utf16_fly_string), JS::default_attributes);
+    return result;
+}
+
+static GC::Ref<JS::Object> create_chrome_csi_object(JS::Realm& realm, HTML::Window& window)
+{
+    auto result = JS::Object::create(realm, realm.intrinsics().object_prototype());
+    auto const& load_timing = window.associated_document().load_timing_info();
+    auto time_origin = HighResolutionTime::get_time_origin_timestamp(realm.global_object());
+    auto onload_time = load_timing.load_event_end_time == 0 ? 0.0 : time_origin + load_timing.load_event_end_time;
+
+    result->define_direct_property("startE"_utf16_fly_string, JS::Value(time_origin), JS::default_attributes);
+    result->define_direct_property("onloadT"_utf16_fly_string, JS::Value(onload_time), JS::default_attributes);
+    result->define_direct_property("pageT"_utf16_fly_string, JS::Value(HighResolutionTime::current_high_resolution_time(realm.global_object())), JS::default_attributes);
+    result->define_direct_property("tran"_utf16_fly_string, JS::Value(15), JS::default_attributes);
+    return result;
+}
+
+static void define_chrome_property(JS::Realm& realm, HTML::Window& window, JS::Object& global_object)
+{
+    auto chrome = JS::Object::create(realm, realm.intrinsics().object_prototype());
+    chrome->define_direct_property("loadTimes"_utf16_fly_string, JS::NativeFunction::create(realm, [&window, &realm](JS::VM&) -> JS::ThrowCompletionOr<JS::Value> { return create_chrome_load_times_object(realm, window); }, 0, Utf16FlyString {}, &realm), JS::default_attributes);
+    chrome->define_direct_property("csi"_utf16_fly_string, JS::NativeFunction::create(realm, [&window, &realm](JS::VM&) -> JS::ThrowCompletionOr<JS::Value> { return create_chrome_csi_object(realm, window); }, 0, Utf16FlyString {}, &realm), JS::default_attributes);
+    chrome->define_direct_property("app"_utf16_fly_string, create_chrome_app_object(realm), JS::default_attributes);
+    chrome->define_direct_property("runtime"_utf16_fly_string, JS::Object::create(realm, realm.intrinsics().object_prototype()), JS::default_attributes);
+
+    // Chromium exposes chrome as an enumerable, writable, non-configurable own property of Window.
+    global_object.define_direct_property("chrome"_utf16_fly_string, chrome, JS::Attribute::Writable | JS::Attribute::Enumerable);
+}
+
 WebIDL::ExceptionOr<void> initialize_window_web_interfaces(HTML::Window& window)
 {
     auto& realm = window.principal_realm();
@@ -137,6 +224,8 @@ WebIDL::ExceptionOr<void> initialize_window_web_interfaces(HTML::Window& window,
     Bindings::WindowGlobalMixin window_global_mixin;
     window_global_mixin.initialize(realm, global_object);
     window_global_mixin.define_unforgeable_attributes(realm, global_object);
+
+    define_chrome_property(realm, window, global_object);
 
     // The interface/unforgeable setup above is realm-scoped and must run for every Window wrapper realm.
     // WindowOrWorkerGlobalScopeMixin state is impl-scoped and shared by all worlds for this Window.

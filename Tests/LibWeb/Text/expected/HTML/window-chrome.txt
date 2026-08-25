@@ -1,0 +1,22 @@
+window.chrome is an object: true
+window.chrome has Object.prototype: true
+window.chrome is writable: true
+window.chrome is enumerable: true
+window.chrome is non-configurable: true
+chrome keys: loadTimes,csi,app,runtime
+chrome.loadTimes is native: true
+chrome.csi is native: true
+chrome.runtime is an object: true
+chrome.app.isInstalled: false
+chrome.app.getDetails(): null
+chrome.app.getIsInstalled(): false
+chrome.app.runningState(): cannot_run
+chrome.app.InstallState: {"DISABLED":"disabled","INSTALLED":"installed","NOT_INSTALLED":"not_installed"}
+chrome.app.RunningState: {"CANNOT_RUN":"cannot_run","READY_TO_RUN":"ready_to_run","RUNNING":"running"}
+loadTimes requestTime is positive: true
+loadTimes start matches request: true
+loadTimes navigationType: Other
+loadTimes connectionInfo: unknown
+csi startE is positive: true
+csi pageT is non-negative: true
+csi transition type: 15

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/Array.h>
+#include <AK/NeverDestroyed.h>
 #include <LibGC/Heap.h>
 #include <LibJS/Runtime/Error.h>
 #include <LibWeb/Bindings/Permissions.h>
@@ -24,10 +26,32 @@ namespace Web::PermissionsAPI {
 
 bool is_permission_supported(Utf16View name)
 {
-    if (name == "geolocation"_utf16) {
-        return true;
-    }
-    return false;
+    // Keep this list in sync with the permission names recognized by multiple browser engines and
+    // exercised by the Permissions API WPT suite. Feature-specific descriptors can be added as
+    // their corresponding APIs are implemented; the base query contract still returns a useful
+    // PermissionStatus for these names today.
+    static NeverDestroyed<Array<Utf16FlyString, 19>> supported_permissions { Array<Utf16FlyString, 19> {
+        "accelerometer"_utf16_fly_string,
+        "ambient-light-sensor"_utf16_fly_string,
+        "background-fetch"_utf16_fly_string,
+        "background-sync"_utf16_fly_string,
+        "bluetooth"_utf16_fly_string,
+        "camera"_utf16_fly_string,
+        "display-capture"_utf16_fly_string,
+        "geolocation"_utf16_fly_string,
+        "gyroscope"_utf16_fly_string,
+        "magnetometer"_utf16_fly_string,
+        "microphone"_utf16_fly_string,
+        "midi"_utf16_fly_string,
+        "nfc"_utf16_fly_string,
+        "notifications"_utf16_fly_string,
+        "persistent-storage"_utf16_fly_string,
+        "push"_utf16_fly_string,
+        "screen-wake-lock"_utf16_fly_string,
+        "speaker-selection"_utf16_fly_string,
+        "xr-spatial-tracking"_utf16_fly_string,
+    } };
+    return any_of(*supported_permissions, [name](auto const& supported_permission) { return supported_permission == name; });
 }
 
 // https://w3c.github.io/permissions/#dfn-request-permission-to-use

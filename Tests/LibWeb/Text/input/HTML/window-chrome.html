@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    test(() => {
+        const chromeDescriptor = Object.getOwnPropertyDescriptor(window, "chrome");
+        println(`window.chrome is an object: ${typeof window.chrome === "object"}`);
+        println(`window.chrome has Object.prototype: ${Object.getPrototypeOf(window.chrome) === Object.prototype}`);
+        println(`window.chrome is writable: ${chromeDescriptor.writable}`);
+        println(`window.chrome is enumerable: ${chromeDescriptor.enumerable}`);
+        println(`window.chrome is non-configurable: ${!chromeDescriptor.configurable}`);
+
+        println(`chrome keys: ${Object.keys(window.chrome).join(",")}`);
+        println(`chrome.loadTimes is native: ${Function.prototype.toString.call(chrome.loadTimes) === "function () { [native code] }"}`);
+        println(`chrome.csi is native: ${Function.prototype.toString.call(chrome.csi) === "function () { [native code] }"}`);
+        println(`chrome.runtime is an object: ${typeof chrome.runtime === "object"}`);
+
+        println(`chrome.app.isInstalled: ${chrome.app.isInstalled}`);
+        println(`chrome.app.getDetails(): ${chrome.app.getDetails()}`);
+        println(`chrome.app.getIsInstalled(): ${chrome.app.getIsInstalled()}`);
+        println(`chrome.app.runningState(): ${chrome.app.runningState()}`);
+        println(`chrome.app.InstallState: ${JSON.stringify(chrome.app.InstallState)}`);
+        println(`chrome.app.RunningState: ${JSON.stringify(chrome.app.RunningState)}`);
+
+        const loadTimes = chrome.loadTimes();
+        println(`loadTimes requestTime is positive: ${loadTimes.requestTime > 0}`);
+        println(`loadTimes start matches request: ${loadTimes.startLoadTime === loadTimes.requestTime}`);
+        println(`loadTimes navigationType: ${loadTimes.navigationType}`);
+        println(`loadTimes connectionInfo: ${loadTimes.connectionInfo}`);
+
+        const csi = chrome.csi();
+        println(`csi startE is positive: ${csi.startE > 0}`);
+        println(`csi pageT is non-negative: ${csi.pageT >= 0}`);
+        println(`csi transition type: ${csi.tran}`);
+    });
+</script>
