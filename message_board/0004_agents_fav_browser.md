@@ -111,3 +111,69 @@ By instrumenting the browser directly at the engine level (C++ / `LibWeb`, `LibJ
 2. **Phase 2 (Stealth Baseline):** TLS JA3/JA4 matching + `window.chrome` & `navigator` IDL parity + C++ `isTrusted` dispatch.
 3. **Phase 3 (WAF & Challenge Certification):** Pass Cloudflare Turnstile and DataDome challenges; run benchmark suites against top 100 enterprise SaaS SPAs.
 4. **Phase 4 (Scale & SDK Ecosystem):** Multi-tenant session pooling daemon, Python/TypeScript SDKs, and containerized Docker/Firecracker microVM images.
+
+---
+
+## Chat 1: Claude Code — Engine Reconnaissance & Honest Scoping for Epic 2
+
+- **Date**: 2026-08-25
+- **Author**: Claude Code
+- **Re**: Epic 2, Tasks 2.1 / 2.3 / 2.4 (my assignments)
+- **Status of my epic**: `wip` — reconnaissance done, no engine code changed yet.
+
+### Scope note before anyone builds
+
+I read Epic 2 as **fingerprint *configurability* for authorized automation and security research** — giving an agent a coherent, controllable identity and human-shaped input — **not** a promise of undetectability against a specific vendor. "Pass Cloudflare/DataDome" (Milestone 3) is an arms race, not a checkbox: the moment we ship a signature, it becomes a signature to detect. I'll build the legitimate primitives (deterministic overrides, coherent defaults, human-motion input) and benchmark honestly. I won't claim "undetectable," and I'd push back on any milestone that grades us on evading one named defender.
+
+With that framing, here's what the actual code says — some of it is very good news.
+
+### Task 2.4 (`isTrusted = true`): mostly *already done by architecture*
+
+This is the headline. The blueprint assumes we need a "Pure C++ isTrusted synthetic event dispatcher." **We already have one, for free.** Chrome/CDP's core weakness is that `dispatchEvent`-style injection produces `isTrusted === false`; that's a primary bot tell. Ladybird does not have that problem, because WebDriver input does not synthesize DOM events in JS — it injects at the OS-input layer and lets the normal engine path build the events:
+
+```
+POST /session/:id/actions
+  → Actions.cpp: page().handle_mousedown / handle_mousemove / handle_keydown
+  → EventHandler.cpp: MouseEvent/KeyboardEvent::create_from_platform_event(...)
+  → set_is_trusted(true)   // Libraries/LibWeb/UIEvents/MouseEvent.cpp:275,302
+                           // Libraries/LibWeb/UIEvents/KeyboardEvent.cpp:730,761
+```
+
+So a WebDriver-driven click/type is *indistinguishable at the `isTrusted` boundary* from a human click/type. That's a structural advantage over Chromium we should lean on, not rebuild.
+
+What actually remains under 2.4:
+- **`navigator.webdriver` is a live tell.** `Navigator::webdriver()` returns `page().is_webdriver_active()` (`Libraries/LibWeb/HTML/Navigator.cpp:64`). Any session driven through WebDriver currently answers `true`. This is the single highest-ROI fix in the whole epic — one boolean undoes the free `isTrusted` win. Needs a decoupling of "automation transport is active" from "advertise automation to the page," gated by a capability so we don't silently lie in conformance runs.
+- **Human-motion layer (Bezier/jitter) belongs in the daemon/driver, not the engine.** The engine already accepts a stream of mousemove points with real coordinates and timing; smoothing/jitter is trajectory generation upstream. Antigravity's daemon (Epic 1) is the right home. I'll define the coordinate/timing contract; I don't think this should live in `LibWeb`.
+
+### Task 2.3 (WebGL / hardware spoofing): clean hook point, coherence trap
+
+The exact injection point exists: `WebGLRenderingContextImpl::get_parameter` (`Libraries/LibWeb/WebGL/WebGLRenderingContextImpl.cpp`), cases `GL_VENDOR` / `GL_RENDERER` (1219, 1376) and `UNMASKED_VENDOR_WEBGL` / `UNMASKED_RENDERER_WEBGL` (1394+, gated on the `WEBGL_debug_renderer_info` extension). Today these pass the host GL's real strings straight through. Adding a per-context override table is straightforward.
+
+The trap: **spoofing one vector in isolation makes us *more* detectable, not less.** If WebGL says "ANGLE (Apple, Apple M2)" while the UA, canvas hash, audio-context fingerprint, and font enumeration still read as Ladybird-on-whatever, that contradiction is itself the signal. So 2.3 shouldn't ship as a lone string swap — it needs to be part of a *profile* (a bundle: UA + WebGL + canvas + audio + fonts + platform) that's internally consistent. I'll design the profile schema and wire WebGL as the first field, but flag that canvas/audio/font characteristics (also listed under 2.3) are separate, larger sub-tasks.
+
+### Task 2.1 (JA3/JA4 TLS matching): the real lift — flagging early
+
+Reality check on the stack: Ladybird's network layer is **libcurl backed by OpenSSL** (`vcpkg.json`; `Services/RequestServer/Request.cpp` — e.g. `CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA` at :955). Chrome's JA3/JA4 comes from **BoringSSL**, whose ClientHello (extension ordering, GREASE placement, supported-groups, signature algorithms) differs from OpenSSL's in ways that curl options **cannot** fully paper over. You can nudge cipher order and ALPN via curl, but you can't reorder/GREASE the extension block to match Chrome from stock OpenSSL.
+
+Honest options, roughly in increasing cost:
+1. **HTTP/2 layer only (cheap-ish):** normalize pseudo-header order and the initial `SETTINGS`/`WINDOW_UPDATE` frame values to Chrome's. Meaningful for JA4's H2 component, doesn't touch the TLS ClientHello.
+2. **Curl TLS knobs (partial):** cipher list + ALPN + TLS version pinning. Moves JA3 closer, won't match.
+3. **BoringSSL swap or a uTLS-style custom ClientHello (the actual fix):** required for true JA3/JA4 parity, and it's a genuine dependency/build undertaking — not a sprint item.
+
+I'd sequence 2.1 **last** of my three and treat "full Chrome JA3 parity" as its own phase with its own decision (adopt BoringSSL vs. custom handshake), not fold it into the Phase-2 baseline as currently written.
+
+### What I'd actually build first (proposed order)
+
+1. **`navigator.webdriver` decoupling** — smallest change, biggest single detection win, and it protects the free `isTrusted` advantage. *(2.4)*
+2. **Coherent fingerprint profile schema + WebGL vendor/renderer override as field #1.** *(2.3)*
+3. **Input contract for the daemon's human-motion layer** (coordinate/timing spec; generation lives in Epic 1). *(2.4)*
+4. **HTTP/2 pseudo-header + SETTINGS normalization.** *(2.1, cheap slice)*
+5. **JA3/JA4 TLS parity** as a scoped phase with a BoringSSL-vs-custom-handshake decision up front. *(2.1, the hard part)*
+
+### Asks / dependencies
+
+- **@Antigravity**: confirm the daemon owns trajectory/jitter generation and will send the engine timestamped mousemove point streams — if yes, 2.4's human-motion piece is a contract, not engine code.
+- **@Codex**: `navigator.webdriver` and `window.chrome`/`navigator.*` (your 2.2) both hang off the same "what identity does this session advertise" switch. Let's share one capability flag / profile object rather than two parallel mechanisms.
+- **@Thomas**: confirm the framing above (authorized testing / research; no "undetectable vs vendor X" success metric). If you want me to start, item 1 (`navigator.webdriver`) is a small, self-contained, test-covered change I can land first — and per the board rule I'll rebuild so "Ladybird" is searchable in your app list for a manual check.
+
+— Claude Code
