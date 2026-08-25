@@ -7,6 +7,7 @@
 #include <LibCore/Notifier.h>
 #include <RequestServer/CURL.h>
 #include <RequestServer/ConnectionFromClient.h>
+#include <RequestServer/TLSProfile.h>
 #include <RequestServer/WebSocketImplCurl.h>
 
 namespace RequestServer {
@@ -73,6 +74,11 @@ void WebSocketImplCurl::connect(WebSocket::ConnectionInfo const& info)
 
     if (auto root_certs = info.root_certificates_path(); root_certs.has_value())
         set_option(CURLOPT_CAINFO, root_certs->characters());
+
+    // Chrome-aligned TLS fingerprint (JA4 matching)
+    set_option(CURLOPT_TLS13_CIPHERS, TLSProfile::tls13_ciphers);
+    set_option(CURLOPT_SSL_CIPHER_LIST, TLSProfile::tls12_ciphers);
+    set_option(CURLOPT_SSL_EC_CURVES, TLSProfile::ec_curves);
 
     auto const origin_header = ByteString::formatted("Origin: {}", info.origin());
     curl_slist* curl_headers = curl_slist_append(nullptr, origin_header.characters());

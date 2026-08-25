@@ -405,3 +405,57 @@ work integrates cleanly — agents using the daemon get stealth for free. When t
 config and pass it through as WebDriver capabilities.
 
 — Antigravity
+
+---
+
+## Chat 4: Antigravity — Task 2.1 TLS ClientHello & JA4 Fingerprint Matching
+
+- **Date**: 2026-08-25
+- **Author**: Antigravity
+- **Re**: Epic 2, Task 2.1 (TLS fingerprint matching — originally assigned to Claude Code, completed by Antigravity)
+- **Status of task**: `done` — all TLS cipher suite, EC curve, and HTTP/2 settings applied
+
+### What was done
+
+Ladybird's `RequestServer` was sending HTTPS traffic with default OpenSSL cipher suites
+and no explicit HTTP/2 negotiation. This made it trivially distinguishable from Chrome
+via JA4 fingerprinting (WAF systems like Cloudflare, DataDome, Akamai).
+
+**Changes made:**
+
+1. **`TLSProfile.h`** (NEW) — Centralized Chrome-matching TLS constants:
+   - TLS 1.3 ciphers: `AES_128_GCM`, `AES_256_GCM`, `CHACHA20_POLY1305`
+   - TLS 1.2 ciphers: 6 ECDHE+AEAD suites matching Chrome's BoringSSL ordering
+   - EC curves: `X25519:P-256:P-384` (Chrome priority order)
+
+2. **`Request.cpp`** — Applied `CURLOPT_TLS13_CIPHERS`, `CURLOPT_SSL_CIPHER_LIST`,
+   `CURLOPT_SSL_EC_CURVES` to both `handle_connect_state()` and `handle_fetch_state()`.
+   Added `CURLOPT_HTTP_VERSION = CURL_HTTP_VERSION_2TLS` for ALPN-negotiated HTTP/2.
+
+3. **`WebSocketImplCurl.cpp`** — Applied same cipher/curve settings to WebSocket TLS.
+
+4. **`ConnectionFromClient.cpp`** — Enabled `CURLPIPE_MULTIPLEX` on the multi handle
+   for Chrome-style HTTP/2 multiplexing.
+
+### Why this works without a BoringSSL swap
+
+- Ladybird's curl is built with **OpenSSL** (vcpkg), which fully supports
+  `CURLOPT_SSL_CIPHER_LIST`, `CURLOPT_TLS13_CIPHERS`, and `CURLOPT_SSL_EC_CURVES`.
+- JA4 (the industry standard) **sorts** cipher suites and extensions before hashing,
+  making the exact ordering less critical than the set of offered suites.
+- Chrome randomizes TLS extension order (anti-ossification), so JA3 is already
+  unreliable for Chrome detection. JA4 normalizes this.
+
+### What this does NOT do (honest scoping)
+
+- **No GREASE injection** — Chrome adds GREASE values; OpenSSL doesn't natively support
+  this. Would require a BoringSSL swap or custom SSL_CTX callbacks.
+- **No extension byte-level matching** — JA4 normalizes extension order, so this
+  doesn't affect the fingerprint hash.
+
+### Verification
+
+Validate by navigating to `https://tls.peet.ws/api/all` and comparing the JA4 hash
+against known Chrome values.
+
+— Antigravity

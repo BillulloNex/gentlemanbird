@@ -20,6 +20,7 @@
 #include <RequestServer/Request.h>
 #include <RequestServer/Resolver.h>
 #include <RequestServer/ResourceSubstitutionMap.h>
+#include <RequestServer/TLSProfile.h>
 
 namespace RequestServer {
 
@@ -890,6 +891,11 @@ void Request::handle_connect_state()
     set_option(CURLOPT_CONNECTTIMEOUT, s_connect_timeout_seconds);
     set_option(CURLOPT_CONNECT_ONLY, 1L);
 
+    // Chrome-aligned TLS fingerprint (JA4 matching)
+    set_option(CURLOPT_TLS13_CIPHERS, TLSProfile::tls13_ciphers);
+    set_option(CURLOPT_SSL_CIPHER_LIST, TLSProfile::tls12_ciphers);
+    set_option(CURLOPT_SSL_EC_CURVES, TLSProfile::ec_curves);
+
     // Pre-populate the multi's hostcache so libcurl skips its threaded resolver entirely.
     VERIFY(m_dns_result);
     auto formatted_address = build_curl_resolve_list(*m_dns_result, m_url.serialized_host(), m_url.port_or_default());
@@ -949,6 +955,12 @@ void Request::handle_fetch_state()
     if constexpr (CURL_DEBUG) {
         set_option(CURLOPT_VERBOSE, 1);
     }
+
+    // Chrome-aligned TLS fingerprint (JA4 matching)
+    set_option(CURLOPT_TLS13_CIPHERS, TLSProfile::tls13_ciphers);
+    set_option(CURLOPT_SSL_CIPHER_LIST, TLSProfile::tls12_ciphers);
+    set_option(CURLOPT_SSL_EC_CURVES, TLSProfile::ec_curves);
+    set_option(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
 
 #if defined(AK_OS_WINDOWS)
     // Without explicitly using the OS Native CA cert store on Windows, https requests timeout with CURLE_PEER_FAILED_VERIFICATION

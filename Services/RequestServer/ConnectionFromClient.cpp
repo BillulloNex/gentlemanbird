@@ -107,6 +107,7 @@ ConnectionFromClient::ConnectionFromClient(NonnullOwnPtr<IPC::Transport> transpo
     set_option(CURLMOPT_SOCKETDATA, this);
     set_option(CURLMOPT_TIMERFUNCTION, &on_timeout_callback);
     set_option(CURLMOPT_TIMERDATA, this);
+    set_option(CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX); // Chrome-style HTTP/2 multiplexing
 
     m_timer = Core::Timer::create_single_shot(0, [this] {
         note_event_tick("curl-timer-fired"sv);
