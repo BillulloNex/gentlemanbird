@@ -1,0 +1,39 @@
+# Ignore version control
+.git
+.gitattributes
+.gitignore
+
+# Build artifacts (we build inside Docker, not from host)
+Build/
+Build_*
+
+# Reference engines (huge, not needed for our build)
+reference/
+
+# IDE and editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules (daemon installs its own inside Docker)
+Utilities/gentlemanbird-daemon/node_modules/
+Utilities/gentlemanbird-daemon/dist/
+SDKs/python/gentlemanbird/.venv/
+
+# Test output
+test-dumps/
+
+# CI-only directories
+.devcontainer/
+.github/
+
+# Message board (docs only)
+message_board/
+
+# macOS junk
+.DS_Store
+
+# ccache (host cache, not needed in Docker)
+.ccache/
