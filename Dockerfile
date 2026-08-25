@@ -18,9 +18,14 @@ WORKDIR /src
 # Copy the entire source tree (filtered by .dockerignore)
 COPY . .
 
-# Bootstrap vcpkg (clones + builds vcpkg toolchain that cmake --preset expects)
+# Bootstrap vcpkg manually (ladybird.py refuses to run as root in Docker).
+# Extract the pinned baseline from vcpkg.json, clone at that commit, and bootstrap.
+RUN mkdir -p Build \
+    && VCPKG_BASELINE=$(python3 -c "import json; print(json.load(open('vcpkg.json'))['builtin-baseline'])") \
+    && git clone https://github.com/microsoft/vcpkg.git Build/vcpkg \
+    && git -C Build/vcpkg checkout "$VCPKG_BASELINE" \
+    && Build/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 ENV VCPKG_ROOT=/src/Build/vcpkg
-RUN python3 Meta/ladybird.py vcpkg
 
 # Build Ladybird in Release mode with Qt UI disabled (headless only).
 # Limit parallel link jobs to avoid OOM on 16GB GitHub runners.
