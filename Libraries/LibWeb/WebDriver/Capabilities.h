@@ -8,6 +8,7 @@
 
 #include <AK/EnumBits.h>
 #include <AK/Forward.h>
+#include <AK/JsonObject.h>
 #include <AK/StringView.h>
 #include <LibWeb/Export.h>
 #include <LibWeb/WebDriver/Response.h>
@@ -50,6 +51,10 @@ struct WEB_API LadybirdOptions {
     bool headless { false };
     bool enable_test_hooks { false };
     bool hide_webdriver { false };
+
+    // Coherent fingerprint profile — passed as `ladybird:profile` capability (JSON object).
+    // When present, this is the authoritative source for all identity flags.
+    Optional<JsonObject> profile;
 };
 
 WEB_API Response process_capabilities(JsonValue const& parameters, SessionFlags flags);

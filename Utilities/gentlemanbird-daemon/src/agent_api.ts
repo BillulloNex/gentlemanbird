@@ -6,7 +6,7 @@
  */
 
 import { IncomingMessage, ServerResponse } from 'http';
-import { SessionManager, SessionNotFoundError } from './session_manager.js';
+import { SessionManager, SessionNotFoundError, SessionProfile } from './session_manager.js';
 
 type RouteHandler = (
   req: IncomingMessage,
@@ -120,6 +120,7 @@ export class AgentAPI {
       headless: (opts.headless as boolean) ?? true,
       viewport: opts.viewport as { width: number; height: number } | undefined,
       capabilities: opts.capabilities as Record<string, unknown> | undefined,
+      profile: opts.profile as SessionProfile | undefined,
     });
     sendJSON(res, 201, info);
   }

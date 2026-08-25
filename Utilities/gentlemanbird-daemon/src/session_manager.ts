@@ -10,10 +10,20 @@ import { WebDriverBridge, WebDriverError } from './webdriver_bridge.js';
 import { AXElement, AXTreeSnapshot, buildAXWalkerScript, formatAXTree } from './ax_tree.js';
 import crypto from 'crypto';
 
+export interface SessionProfile {
+  hideWebdriver?: boolean;
+  enableChromeObject?: boolean;
+  webglVendor?: string;
+  webglRenderer?: string;
+  webglUnmaskedVendor?: string;
+  webglUnmaskedRenderer?: string;
+}
+
 export interface SessionConfig {
   headless?: boolean;
   viewport?: { width: number; height: number };
   capabilities?: Record<string, unknown>;
+  profile?: SessionProfile;
 }
 
 export interface SessionInfo {
@@ -76,8 +86,14 @@ export class SessionManager {
       ...config.capabilities,
     };
 
-    // Enable stealth mode by default
-    capabilities['ladybird:hideWebdriver'] = true;
+    // Build a coherent session profile. When the caller provides an explicit profile,
+    // use it. Otherwise, create a default stealth profile with hideWebdriver enabled.
+    const profile: SessionProfile = config.profile ?? { hideWebdriver: true };
+    capabilities['ladybird:profile'] = profile;
+
+    // Also set the standalone flag for backward compat with sessions that don't
+    // understand the full profile yet.
+    capabilities['ladybird:hideWebdriver'] = profile.hideWebdriver ?? true;
 
     const wdSession = await bridge.createSession(capabilities);
 

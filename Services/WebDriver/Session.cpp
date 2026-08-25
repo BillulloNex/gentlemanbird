@@ -131,6 +131,12 @@ ErrorOr<NonnullRefPtr<Session>> Session::create(NonnullRefPtr<Client> client, Js
     if (session->webdriver_hidden())
         session->web_content_connection().async_set_is_webdriver_hidden(true);
 
+    // Ladybird extension: when a full ladybird:profile is present, send the coherent fingerprint
+    // identity bundle to WebContent. This subsumes the hide_webdriver flag above and also controls
+    // WebGL vendor/renderer strings, window.chrome visibility, and other identity fields.
+    if (session->m_options.profile.has_value())
+        session->web_content_connection().async_set_session_profile(JsonValue(session->m_options.profile.value()));
+
     return session;
 }
 
@@ -297,6 +303,10 @@ ErrorOr<void> Session::accept_web_content_transport(NonnullOwnPtr<IPC::Transport
         // session-level settings above.
         if (webdriver_hidden())
             pending_connection->async_set_is_webdriver_hidden(true);
+
+        // Re-apply the full profile (if present) on new connections for cross-process coherence.
+        if (m_options.profile.has_value())
+            pending_connection->async_set_session_profile(JsonValue(m_options.profile.value()));
 
         if (auto window = m_windows.find(window_handle); window != m_windows.end()) {
             window->value.web_content_connection = move(pending_connection);

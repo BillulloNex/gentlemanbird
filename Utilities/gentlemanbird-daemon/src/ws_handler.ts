@@ -6,7 +6,7 @@
  */
 
 import { WebSocket } from 'ws';
-import { SessionManager, SessionNotFoundError } from './session_manager.js';
+import { SessionManager, SessionNotFoundError, SessionProfile } from './session_manager.js';
 
 interface WSMessage {
   id?: string | number;       // Request ID for correlation
@@ -76,6 +76,7 @@ export class WSHandler {
           headless: p.headless as boolean | undefined,
           viewport: p.viewport as { width: number; height: number } | undefined,
           capabilities: p.capabilities as Record<string, unknown> | undefined,
+          profile: p.profile as SessionProfile | undefined,
         });
 
       case 'session.destroy':

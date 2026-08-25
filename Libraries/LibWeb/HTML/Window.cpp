@@ -225,7 +225,11 @@ WebIDL::ExceptionOr<void> initialize_window_web_interfaces(HTML::Window& window,
     window_global_mixin.initialize(realm, global_object);
     window_global_mixin.define_unforgeable_attributes(realm, global_object);
 
-    define_chrome_property(realm, window, global_object);
+    // GentlemanBird: Only define window.chrome when the session profile enables it.
+    // The default profile has enable_chrome_object=true, preserving existing behavior.
+    // Sessions that want a non-Chrome identity (e.g., Firefox profile) can disable it.
+    if (window.page().session_profile().enable_chrome_object)
+        define_chrome_property(realm, window, global_object);
 
     // The interface/unforgeable setup above is realm-scoped and must run for every Window wrapper realm.
     // WindowOrWorkerGlobalScopeMixin state is impl-scoped and shared by all worlds for this Window.

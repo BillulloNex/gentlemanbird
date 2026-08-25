@@ -78,6 +78,7 @@
 #include <LibWeb/WebDriver/Contexts.h>
 #include <LibWeb/WebDriver/ElementReference.h>
 #include <LibWeb/WebDriver/InputState.h>
+#include <LibWeb/WebDriver/SessionProfile.h>
 #include <LibWeb/WebDriver/JSON.h>
 #include <LibWeb/WebDriver/Properties.h>
 #include <LibWeb/WebDriver/Screenshot.h>
@@ -362,6 +363,31 @@ void WebDriverConnection::set_is_webdriver_active(bool is_webdriver_active)
 void WebDriverConnection::set_is_webdriver_hidden(bool is_webdriver_hidden)
 {
     current_browsing_context().page().set_is_webdriver_hidden(is_webdriver_hidden);
+}
+
+void WebDriverConnection::set_session_profile(JsonValue profile_json)
+{
+    auto& page = current_browsing_context().page();
+    Web::WebDriver::SessionProfile profile;
+
+    if (profile_json.is_object()) {
+        auto const& obj = profile_json.as_object();
+
+        if (auto v = obj.get_bool("hideWebdriver"sv); v.has_value())
+            profile.hide_webdriver = *v;
+        if (auto v = obj.get_bool("enableChromeObject"sv); v.has_value())
+            profile.enable_chrome_object = *v;
+        if (auto v = obj.get_string("webglVendor"sv); v.has_value())
+            profile.webgl_vendor = String::from_utf8_without_validation(v->bytes());
+        if (auto v = obj.get_string("webglRenderer"sv); v.has_value())
+            profile.webgl_renderer = String::from_utf8_without_validation(v->bytes());
+        if (auto v = obj.get_string("webglUnmaskedVendor"sv); v.has_value())
+            profile.webgl_unmasked_vendor = String::from_utf8_without_validation(v->bytes());
+        if (auto v = obj.get_string("webglUnmaskedRenderer"sv); v.has_value())
+            profile.webgl_unmasked_renderer = String::from_utf8_without_validation(v->bytes());
+    }
+
+    page.set_session_profile(move(profile));
 }
 
 // 9.1 Get Timeouts, https://w3c.github.io/webdriver/#dfn-get-timeouts

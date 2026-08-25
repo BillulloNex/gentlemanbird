@@ -45,6 +45,10 @@ static Response deserialize_as_ladybird_capability(StringView name, JsonValue va
         if (!value.is_bool())
             return Error::from_code(ErrorCode::InvalidArgument,
                 MUST(String::formatted("Extension capability {} must be a boolean", name)));
+    } else if (name == "ladybird:profile"sv) {
+        if (!value.is_object())
+            return Error::from_code(ErrorCode::InvalidArgument,
+                MUST(String::formatted("Extension capability {} must be a JSON object", name)));
     }
 
     return value;
@@ -447,6 +451,12 @@ LadybirdOptions::LadybirdOptions(JsonObject const& capabilities)
         this->enable_test_hooks = *enable_test_hooks;
     if (auto hide_webdriver = capabilities.get_bool("ladybird:hideWebdriver"sv); hide_webdriver.has_value())
         this->hide_webdriver = *hide_webdriver;
+    if (auto profile_obj = capabilities.get_object("ladybird:profile"sv); profile_obj.has_value()) {
+        this->profile = *profile_obj;
+        // If the profile includes hideWebdriver, it is the authoritative source.
+        if (auto profile_hide = profile_obj->get_bool("hideWebdriver"sv); profile_hide.has_value())
+            this->hide_webdriver = *profile_hide;
+    }
 }
 
 }

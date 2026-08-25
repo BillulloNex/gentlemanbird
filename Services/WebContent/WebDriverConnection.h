@@ -57,6 +57,7 @@ private:
     virtual void set_strict_file_interactability(bool strict_file_interactability) override;
     virtual void set_is_webdriver_active(bool) override;
     virtual void set_is_webdriver_hidden(bool) override;
+    virtual void set_session_profile(JsonValue) override;
     virtual Messages::WebDriverClient::GetTimeoutsResponse get_timeouts() override;
     virtual Messages::WebDriverClient::SetTimeoutsResponse set_timeouts(JsonValue payload) override;
     virtual Messages::WebDriverClient::NavigateToResponse navigate_to(JsonValue payload) override;

@@ -73,6 +73,7 @@
 #include <LibWeb/PixelUnits.h>
 #include <LibWeb/StorageAPI/StorageEndpoint.h>
 #include <LibWeb/UIEvents/KeyCode.h>
+#include <LibWeb/WebDriver/SessionProfile.h>
 #include <LibWebView/StorageSetResult.h>
 
 namespace Web {
@@ -191,8 +192,13 @@ public:
 
     // When set, the webdriver-active flag is not advertised to page content via navigator.webdriver.
     // This decouples "automation transport is active" from "advertise automation to the page".
-    bool is_webdriver_hidden() const { return m_is_webdriver_hidden; }
-    void set_is_webdriver_hidden(bool b) { m_is_webdriver_hidden = b; }
+    // Delegates to the session profile so all identity flags live in one object.
+    bool is_webdriver_hidden() const { return m_session_profile.hide_webdriver; }
+    void set_is_webdriver_hidden(bool b) { m_session_profile.hide_webdriver = b; }
+
+    // Coherent fingerprint identity bundle for the current session.
+    WebDriver::SessionProfile const& session_profile() const { return m_session_profile; }
+    void set_session_profile(WebDriver::SessionProfile profile) { m_session_profile = move(profile); }
 
     bool is_hovering_link() const { return m_is_hovering_link; }
     void set_is_hovering_link(bool b) { m_is_hovering_link = b; }
@@ -380,7 +386,11 @@ private:
     // https://w3c.github.io/webdriver/#dfn-webdriver-active-flag
     // The webdriver-active flag is set to true when the user agent is under remote control. It is initially false.
     bool m_is_webdriver_active { false };
-    bool m_is_webdriver_hidden { false };
+
+    // Coherent fingerprint identity bundle for the current WebDriver session.
+    // Contains hide_webdriver (previously standalone bool), WebGL strings,
+    // window.chrome toggle, and other identity fields.
+    WebDriver::SessionProfile m_session_profile;
 
     bool m_is_hovering_link { false };
     bool m_is_in_tooltip_area { false };

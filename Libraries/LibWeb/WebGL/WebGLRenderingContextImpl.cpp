@@ -37,6 +37,8 @@ extern "C" {
 #include <LibWeb/WebGL/WebGLVertexArrayObject.h>
 #include <LibWeb/WebIDL/Buffers.h>
 #include <LibWeb/WebGL/WebGLProfile.h>
+#include <LibWeb/HTML/Window.h>
+#include <LibWeb/Page/Page.h>
 
 namespace Web::WebGL {
 
@@ -1218,9 +1220,9 @@ WebIDL::ExceptionOr<JS::Value> WebGLRenderingContextImpl::get_parameter(JS::Real
         return Bindings::wrap(Bindings::host_defined_wrapper_world(caller_realm), caller_realm, GC::Ref { *m_renderbuffer_binding });
     }
     case GL_RENDERER: {
-        // GentlemanBird: Return Chrome-matching masked renderer string for fingerprint coherence.
-        auto spoofed = WebGLProfile::masked_renderer;
-        return JS::PrimitiveString::create(realm().vm(), Utf16String::from_ascii_without_validation(spoofed.bytes()));
+        // GentlemanBird: Return profile-configured masked renderer string for fingerprint coherence.
+        auto const& profile = HTML::relevant_window(realm().global_object()).page().session_profile();
+        return JS::PrimitiveString::create(realm().vm(), Utf16String::from_utf8(profile.webgl_renderer));
     }
     case GL_SAMPLE_ALPHA_TO_COVERAGE: {
         GLboolean result { GL_FALSE };
@@ -1376,9 +1378,9 @@ WebIDL::ExceptionOr<JS::Value> WebGLRenderingContextImpl::get_parameter(JS::Real
         return JS::Value(result);
     }
     case GL_VENDOR: {
-        // GentlemanBird: Return Chrome-matching masked vendor string for fingerprint coherence.
-        auto spoofed = WebGLProfile::masked_vendor;
-        return JS::PrimitiveString::create(realm().vm(), Utf16String::from_ascii_without_validation(spoofed.bytes()));
+        // GentlemanBird: Return profile-configured masked vendor string for fingerprint coherence.
+        auto const& profile = HTML::relevant_window(realm().global_object()).page().session_profile();
+        return JS::PrimitiveString::create(realm().vm(), Utf16String::from_utf8(profile.webgl_vendor));
     }
     case GL_VERSION: {
         auto result = reinterpret_cast<char const*>(m_context->get_string(GL_VERSION));
@@ -1399,18 +1401,18 @@ WebIDL::ExceptionOr<JS::Value> WebGLRenderingContextImpl::get_parameter(JS::Real
             set_error(GL_INVALID_ENUM);
             return JS::js_null();
         }
-        // GentlemanBird: Return Chrome ANGLE vendor string for fingerprint coherence.
-        auto spoofed = WebGLProfile::unmasked_vendor;
-        return JS::PrimitiveString::create(realm().vm(), Utf16String::from_ascii_without_validation(spoofed.bytes()));
+        // GentlemanBird: Return profile-configured ANGLE vendor string for fingerprint coherence.
+        auto const& profile = HTML::relevant_window(realm().global_object()).page().session_profile();
+        return JS::PrimitiveString::create(realm().vm(), Utf16String::from_utf8(profile.webgl_unmasked_vendor));
     }
     case UNMASKED_RENDERER_WEBGL: {
         if (!extension_enabled("WEBGL_debug_renderer_info"sv)) {
             set_error(GL_INVALID_ENUM);
             return JS::js_null();
         }
-        // GentlemanBird: Return Chrome ANGLE renderer string for fingerprint coherence.
-        auto spoofed = WebGLProfile::unmasked_renderer;
-        return JS::PrimitiveString::create(realm().vm(), Utf16String::from_ascii_without_validation(spoofed.bytes()));
+        // GentlemanBird: Return profile-configured ANGLE renderer string for fingerprint coherence.
+        auto const& profile = HTML::relevant_window(realm().global_object()).page().session_profile();
+        return JS::PrimitiveString::create(realm().vm(), Utf16String::from_utf8(profile.webgl_unmasked_renderer));
     }
 
     case GL_FRAGMENT_SHADER_DERIVATIVE_HINT: { // NOTE: This has the same value as GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES
