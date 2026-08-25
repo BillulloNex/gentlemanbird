@@ -459,3 +459,83 @@ Validate by navigating to `https://tls.peet.ws/api/all` and comparing the JA4 ha
 against known Chrome values.
 
 — Antigravity
+
+---
+
+## Chat 5: Antigravity — Remaining Tasks Sweep (2.3, 3.x, 4.x)
+
+- **Date**: 2026-08-25
+- **Author**: Antigravity
+- **Re**: Tasks 2.3, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3
+- **Status**: ✅ All tasks addressed
+
+### Task 2.3: WebGL Profile Spoofing — DONE
+
+**Problem:** `gl.getParameter(gl.VENDOR)` and related calls returned the host GPU's
+real vendor/renderer strings, making Ladybird trivially distinguishable from Chrome.
+
+**Solution:** Created `WebGLProfile.h` with Chrome-matching defaults and hooked all
+4 vendor/renderer code paths in `WebGLRenderingContextImpl.cpp`:
+
+| Parameter | Before | After (Chrome-matching) |
+|-----------|--------|------------------------|
+| `GL_VENDOR` | Host GPU vendor | `"WebKit"` |
+| `GL_RENDERER` | Host GPU renderer | `"WebKit WebGL"` |
+| `UNMASKED_VENDOR_WEBGL` | Host GPU vendor | `"Google Inc. (Apple)"` |
+| `UNMASKED_RENDERER_WEBGL` | Host GPU renderer | `"ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Unspecified Version)"` |
+
+Files: `Libraries/LibWeb/WebGL/WebGLProfile.h` (NEW), `WebGLRenderingContextImpl.cpp` (MODIFIED)
+
+### Tasks 3.1, 3.2, 3.3: AI-Native Perception — ALREADY DONE IN DAEMON
+
+These were implemented as part of Epic 1's daemon (Chat 3):
+
+- **3.1 (AXTree)**: `GET /api/v1/sessions/:id/snapshot/tree` — token-compressed format
+  with roles, names, interactivity tags. 70-80% smaller than raw HTML.
+- **3.2 (Bounding Boxes)**: Included in AXTree output — every element has `[x, y, w, h]`
+  and integer IDs suitable for Set-of-Mark style prompting.
+- **3.3 (Vision Pipeline)**: `GET /api/v1/sessions/:id/snapshot/screenshot` — returns
+  PNG base64 or binary. Combined snapshot via `GET /snapshot` returns tree + screenshot.
+
+The native C++ `inspect_accessibility_tree` IPC exists in `WebContent/ConnectionFromClient.cpp`
+and can be wired as a second AXTree source when needed. The JS-injected version currently
+in the daemon produces richer output (interactive element detection, bounding boxes).
+
+### Task 4.1: Anti-Bot Benchmark Test Harness — DONE
+
+Created `Tests/GentlemanBird/benchmark_stealth.py` — a Python test suite using our SDK:
+
+1. **TLS Fingerprint** — navigates to `tls.peet.ws/api/all`, extracts JA4 hash
+2. **Bot Detection** — runs `bot.sannysoft.com` checks, reports pass/fail per check
+3. **WebGL Fingerprint** — validates GL_VENDOR/GL_RENDERER match Chrome expectations
+4. **navigator.webdriver** — confirms stealth mode hides the flag
+5. **window.chrome** — validates chrome object presence with app/runtime/loadTimes/csi
+
+Outputs JSON report to `Tests/GentlemanBird/benchmark_results.json`.
+
+### Tasks 4.2 & 4.3: Web API Gaps & Error.stack — ALREADY ADDRESSED
+
+- **4.2**: `window.chrome` (Chat 2, Codex), `navigator.plugins` (Window.cpp already
+  synthesizes Chrome PDF Viewer), `Permissions` API improvements already in tree.
+- **4.3**: `ErrorData.cpp` already formats `Error.stack` in V8 style (`"    at name (file:line:col)"`),
+  including the V8 optimization of skipping native constructor frames (line 58-62).
+
+### Summary — All Blueprint Tasks Complete
+
+| Task | Status | Owner |
+|------|--------|-------|
+| 1.1 | ✅ | Antigravity |
+| 1.2 | ✅ | Antigravity |
+| 1.3 | ✅ | Antigravity |
+| 2.1 | ✅ | Antigravity |
+| 2.2 | ✅ | Codex |
+| 2.3 | ✅ | Antigravity |
+| 2.4 | ✅ | Claude Code (architectural) |
+| 3.1 | ✅ | Antigravity |
+| 3.2 | ✅ | Antigravity |
+| 3.3 | ✅ | Antigravity |
+| 4.1 | ✅ | Antigravity |
+| 4.2 | ✅ | Codex |
+| 4.3 | ✅ | Already V8-conformant |
+
+— Antigravity
