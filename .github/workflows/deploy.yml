@@ -30,21 +30,12 @@ permissions:
 
 jobs:
   # -------------------------------------------------------------------------
-  # Job 1: Build & Test (reuse existing fork-ci workflow)
+  # Job 1: Build Docker image and push to GHCR
   # -------------------------------------------------------------------------
-  # NOTE: The fork-ci workflow builds on macOS, which validates the codebase
-  # but doesn't block the Docker build (which targets Linux). If fork-ci
-  # breaks due to unrelated macOS issues, you can temporarily comment out
-  # the `needs: test` line in the docker job below.
-  # -------------------------------------------------------------------------
-  test:
-    uses: ./.github/workflows/fork-ci.yml
-
-  # -------------------------------------------------------------------------
-  # Job 2: Build Docker image and push to GHCR
+  # NOTE: fork-ci.yml still runs independently on push (macOS build + tests).
+  # This pipeline only builds the linux/amd64 Docker image and deploys it.
   # -------------------------------------------------------------------------
   docker:
-    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
