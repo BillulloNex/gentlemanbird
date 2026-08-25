@@ -35,64 +35,72 @@ By instrumenting the browser directly at the engine level (C++ / `LibWeb`, `LibJ
 
 ---
 
-## Work Item Epics & Agent Task Breakdown
+## Work Item Epics & Multi-Agent Task Assignment
+
+### **Team Roster & Specializations**
+- 🧙‍♂️ **Antigravity** — *Systems Architect & Vision Primitives* (Headless daemon, IPC protocol, AXTree & vision streaming, coordination).
+- 🔬 **Claude Code** — *C++ Engine & Stealth Specialist* (TLS/JA3/JA4 handshake customization, `LibGfx` canvas/WebGL spoofing, native `isTrusted` C++ event loop).
+- ⚙️ **Codex** — *WebIDL & LibJS Conformance Engineer* (`window.chrome` prototype chain synthesis, Web API gap filling, V8 `Error.stack` alignment).
+- 🧪 **OpenCode** — *SDK & WAF Benchmark Test Lead* (Python & TypeScript SDKs, test suites against Cloudflare/DataDome, E2E validation).
+
+---
 
 ### **Epic 1: Headless Daemon & Agent IPC Protocol**
-*Goal: Provide a minimal, high-throughput remote control interface tailored for LLMs.*
+*Lead: **Antigravity** | Co-Lead: **OpenCode***
 
-- [ ] **Task 1.1: Headless Execution Harness**
+- [ ] **Task 1.1: Headless Execution Harness** `[Assigned: Antigravity]`
   - Implement a dedicated headless runtime mode that bypasses UI/Qt/AppKit window management.
   - Optimize memory usage per instance (< 50MB baseline idle).
-- [ ] **Task 1.2: Agent Protocol Server (BiDi / Custom IPC)**
+- [ ] **Task 1.2: Agent Protocol Server (BiDi / Custom IPC)** `[Assigned: Antigravity]`
   - Implement a lightweight WebSocket/gRPC control daemon for session management.
   - Implement core automation commands: `Navigate(url)`, `Click(x, y)`, `Type(text)`, `Scroll(dx, dy)`, `CaptureScreenshot()`, `GetSnapshot()`.
-- [ ] **Task 1.3: Python & TypeScript Client SDKs**
+- [ ] **Task 1.3: Python & TypeScript Client SDKs** `[Assigned: OpenCode]`
   - Create developer SDKs for spawning, connecting, and controlling GentlemanBird instances.
   - Provide a drop-in Playwright/Puppeteer adapter or clean async API.
 
 ---
 
 ### **Epic 2: Anti-Detection & Engine Stealth (The "Not Chrome" Layer)**
-*Goal: Match Chrome/Safari signatures natively at the protocol and engine layer without detectable JS shims.*
+*Lead: **Claude Code** | Co-Lead: **Codex***
 
-- [ ] **Task 2.1: TLS ClientHello & Network Fingerprint Matching (JA3/JA4)**
+- [ ] **Task 2.1: TLS ClientHello & Network Fingerprint Matching (JA3/JA4)** `[Assigned: Claude Code]`
   - Configure the networking/TLS stack to replicate Chrome’s cipher suite ordering, extensions, elliptic curves, and ALPN tokens.
   - Standardize HTTP/2 pseudo-header order (`:method`, `:authority`, `:scheme`, `:path`) and initial `SETTINGS` frame values.
-- [ ] **Task 2.2: Native Chrome DOM & Prototype Chain Synthesis**
+- [ ] **Task 2.2: Native Chrome DOM & Prototype Chain Synthesis** `[Assigned: Codex]`
   - Implement native C++ IDL bindings for `window.chrome` (`app`, `runtime`, `loadTimes`, `csi`).
   - Standardize `navigator.plugins`, `navigator.mimeTypes`, `navigator.languages`, and `navigator.webdriver = undefined`.
   - Ensure property descriptors (`enumerable`, `configurable`, `writable`) and `Function.prototype.toString()` match Chrome native V8 behaviors exactly.
-- [ ] **Task 2.3: Hardware & WebGL Profile Spoofing**
+- [ ] **Task 2.3: Hardware & WebGL Profile Spoofing** `[Assigned: Claude Code]`
   - Expose customizable WebGL vendor/renderer strings (e.g., `ANGLE (Apple, Apple M2...)`).
   - Implement realistic canvas, audio context, and font enumeration characteristics.
-- [ ] **Task 2.4: Human-Grade Event Dispatching (`isTrusted = true`)**
+- [ ] **Task 2.4: Human-Grade Event Dispatching (`isTrusted = true`)** `[Assigned: Claude Code]`
   - Implement native input injection directly in `LibWeb`'s event loop so all synthetic mouse, keyboard, and touch events are emitted with `isTrusted = true`.
   - Add optional Bezier curve mouse trajectory smoothing and human typing jitter generator.
 
 ---
 
 ### **Epic 3: AI-Native Perception & Extraction Primitives**
-*Goal: Make the DOM and visual state instant, clean, and token-efficient for LLMs.*
+*Lead: **Antigravity***
 
-- [ ] **Task 3.1: Token-Optimized Accessibility Tree (AXTree) Extractor**
+- [ ] **Task 3.1: Token-Optimized Accessibility Tree (AXTree) Extractor** `[Assigned: Antigravity]`
   - Expose a native C++ method to traverse the accessibility tree and export a filtered, semantic hierarchy (roles, names, states, coordinates, interactivity tags).
   - Strip redundant nodes to save 70-80% of context window tokens compared to raw HTML.
-- [ ] **Task 3.2: Direct Interactive Bounding Box Mapping**
+- [ ] **Task 3.2: Direct Interactive Bounding Box Mapping** `[Assigned: Antigravity]`
   - Automatically calculate and output `[x, y, width, height]` and interactive element IDs for vision/multimodal models (Set-of-Mark style prompting).
-- [ ] **Task 3.3: High-Speed Vision Pipeline**
+- [ ] **Task 3.3: High-Speed Vision Pipeline** `[Assigned: Antigravity]`
   - Enable zero-copy snapshotting from the compositor/Skia canvas directly into compressed JPEG/WebP or shared memory buffers for local VLM inference.
 
 ---
 
 ### **Epic 4: Web Platform Compatibility & Challenge Script Hardening**
-*Goal: Fix edge-case API gaps in `LibWeb` and `LibJS` so bot challenges and SPAs run cleanly.*
+*Lead: **Codex** | Co-Lead: **OpenCode***
 
-- [ ] **Task 4.1: Anti-Bot Challenge Suite Benchmarking**
+- [ ] **Task 4.1: Anti-Bot Challenge Suite Benchmarking** `[Assigned: OpenCode]`
   - Create an automated test harness targeting Cloudflare Turnstile, DataDome, Akamai, and Kasada challenge pages.
   - Log and isolate any `LibJS` runtime exceptions or missing Web APIs.
-- [ ] **Task 4.2: Web API Gap Filling in `LibWeb`**
+- [ ] **Task 4.2: Web API Gap Filling in `LibWeb`** `[Assigned: Codex]`
   - Identify and implement missing modern Web APIs frequently probed by complex SPAs and challenge scripts (e.g., specific `Intl` formats, `Permissions` queries, `PerformanceObserver` entries).
-- [ ] **Task 4.3: Stack Trace & Error Object Conformance**
+- [ ] **Task 4.3: Stack Trace & Error Object Conformance** `[Assigned: Codex]`
   - Ensure `Error.stack` formatting in `LibJS` matches the V8 layout expected by obfuscated verification scripts.
 
 ---
