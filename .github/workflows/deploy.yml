@@ -18,7 +18,7 @@ on:
 
 concurrency:
   group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -100,7 +100,7 @@ jobs:
         run: |
           echo "🚀 Triggering Coolify redeploy at surf.beenex.org..."
           response=$(curl -s -w "\n%{http_code}" \
-            -X GET "${{ secrets.COOLIFY_API_URL }}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}&force=true" \
+            -X POST "${{ secrets.COOLIFY_API_URL }}/api/v1/deploy?uuid=${COOLIFY_APP_UUID}&force=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             -H "Content-Type: application/json")
           http_code=$(echo "$response" | tail -1)
