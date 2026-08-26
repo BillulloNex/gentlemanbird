@@ -28,13 +28,12 @@ RUN mkdir -p Build \
 ENV VCPKG_ROOT=/src/Build/vcpkg
 
 # Build Ladybird in Release mode with Qt UI disabled (headless only).
-# Limit parallel link jobs to avoid OOM on 16GB GitHub runners.
+# Use --parallel 2 to limit memory pressure during linking on 16GB runners.
 RUN cmake --preset Release \
       -DENABLE_GUI_TARGETS=OFF \
-      -DLAGOM_LINK_POOL_SIZE=2 \
       -DCMAKE_C_COMPILER=clang \
       -DCMAKE_CXX_COMPILER=clang++ \
-    && cmake --build Build/release --parallel $(nproc)
+    && cmake --build Build/release --parallel 2
 
 # Build the gentlemanbird-daemon (TypeScript → JavaScript)
 WORKDIR /src/Utilities/gentlemanbird-daemon
