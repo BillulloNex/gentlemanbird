@@ -27,10 +27,9 @@ RUN mkdir -p Build \
     && Build/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 ENV VCPKG_ROOT=/src/Build/vcpkg
 
-# Build Ladybird in Release mode with Qt UI disabled (headless only).
+# Build Ladybird in Release mode.
 # Use --parallel 2 to limit memory pressure during linking on 16GB runners.
 RUN cmake --preset Release \
-      -DENABLE_GUI_TARGETS=OFF \
       -DCMAKE_C_COMPILER=clang \
       -DCMAKE_CXX_COMPILER=clang++ \
     && cmake --build Build/release --parallel 2
